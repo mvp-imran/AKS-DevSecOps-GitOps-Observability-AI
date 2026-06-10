@@ -162,6 +162,25 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
 3. Click **Review + create**, and then **Create**.
 4. Once deployed, open the Storage Account, select **Containers** under *Data storage*, click **+ Container**, and name it `velero` with Private access.
 
+### 4. Create and Configure Azure Front Door with WAF (Global Ingress Gateway)
+1. Search for **Front Door and CDN profiles** in the Azure Portal search bar and click **+ Create**.
+2. Compare offerings, select **Azure Front Door**, and select **Custom create**. Click **Continue to create Front Door**.
+3. In the **Basics** tab:
+   * **Resource Group:** Select `rg-platform-dev-eus`.
+   * **Name:** `fd-platform-ingress-dev`.
+4. In the **Endpoint** tab, click **+ Add endpoint**:
+   * **Endpoint name:** `endpoint-customer-api-dev` (globally unique). Click **Add**.
+5. In the **Route** tab, click **+ Add route**:
+   * **Route name:** `route-to-dev-appgw`.
+   * **Domains:** Select your endpoint `endpoint-customer-api-dev.azurefd.net`.
+   * **Origin group:** Click *Create new*. Name: `og-dev-appgw`. Click *Add origin*. Name: `origin-appgw`, Origin type: *Public IP address*, Select the public IP associated with your spoke Application Gateway. Click *Add* and then *Create*.
+   * **Forwarding protocol:** HTTPS only.
+   * Click **Add**.
+6. In the **Security** tab:
+   * Check **Enable WAF** (Web Application Firewall).
+   * Under *WAF policy*, click *Create new*. Name it `waf-fd-platform-dev`, set Mode to **Prevention**, and click *Create*.
+7. Click **Review + create**, and then **Create**.
+
 ---
 
 ## Part 3 — Private AKS Cluster Provisioning (Azure Portal)
@@ -244,6 +263,16 @@ As an alternative to Velero commands, configure native Azure Backup for your clu
    * **Storage account:** Select your storage account `savelerodeveus` and blob container `velero`.
 5. Click **Validate** and then **Configure backup**. Azure will automatically deploy the backup extension and schedule snapshots.
 
+### 7. Configure Istio Service Mesh Add-on (Azure Portal Service Mesh Integration)
+As an alternative to manual Istio Helm charts, enable native Istio integration on AKS:
+1. Open your **aks-dev-cluster** resource page in the portal.
+2. Scroll to the **Settings** section in the left menu and click on **Service Mesh**.
+3. Check the box **Enable Service Mesh** and select **Istio**.
+4. In the configuration:
+   * **HTTP ingress gateway:** Select **External** (this provisions a public IP load balancer to route external mesh traffic through Istio).
+   * Set configuration options to default.
+5. Click **Save** (Azure will automatically install the Istio control plane `istiod` and ingress gateway components into namespace `aks-istio-system`).
+
 ---
 
 ## Part 4 — Azure DevOps & GitOps Setup (DevOps Portal)
@@ -288,7 +317,16 @@ Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operato
 5. Locate `grafana.ingress.hosts` and input your registered domain mapping, e.g., `grafana.dev.customer-api.mvfimran.com`.
 6. Click **Save** (ArgoCD will automatically reconcile and deploy the ingress route, allowing you to access Grafana directly at that DNS address).
 
-### 4. Auditing Compliance and Security Policies (Azure Portal)
+### 4. Import the OpenCost FinOps Dashboard in Grafana GUI
+To visualize OpenCost cluster expenditures (Phase 12 of the deployment plan) inside your Grafana dashboard:
+1. Open your browser and navigate to the exposed Grafana URL.
+2. Log in using your admin credentials.
+3. In the left menu, click **Dashboards** -> click **New** -> select **Import**.
+4. In the **Find and import dashboards...** input box, enter the OpenCost Dashboard ID: **`16865`** (or paste the JSON definition). Click **Load**.
+5. Select **Prometheus** as the target data source in the dropdown.
+6. Click **Import**. The dashboard will instantly render cost graphs displaying compute spend per pod, namespace, and team.
+
+### 5. Auditing Compliance and Security Policies (Azure Portal)
 To verify that Kyverno policies (Phase 8 of the deployment plan) are operating correctly and protecting the cluster:
 1. Open your **aks-dev-cluster** resource page in the Azure Portal.
 2. Under the **Settings** section in the left menu, click on **Policies**.
