@@ -59,6 +59,60 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
      * Traffic forwarded from remote virtual network: *Allow (default)*
 4. Click **Add**. Both peerings will transition to `Connected` status.
 
+### 4. Create and Configure Spoke Route Table (UDR)
+1. Search for **Route tables** in the portal search bar and click **+ Create**.
+2. Configure the basics:
+   * **Resource Group:** `rg-platform-dev-eus`
+   * **Region:** `East US`
+   * **Name:** `rt-spoke-egress-dev`
+3. Click **Review + create**, and then **Create**.
+4. Once deployed, open the Route Table resource:
+   * Select **Routes** on the left menu, then click **+ Add**.
+     * **Route name:** `route-to-hub-firewall`
+     * **Destination type:** `IP Addresses`
+     * **Destination IP addresses/CIDR ranges:** `0.0.0.0/0`
+     * **Next hop type:** `Virtual appliance`
+     * **Next hop address:** `10.0.0.4` *(Private IP of the Hub Azure Firewall)*
+     * Click **Add**.
+   * Select **Subnets** on the left menu, then click **+ Associate**.
+     * **Virtual network:** `vnet-platform-dev-eus`
+     * **Subnet:** Select `snet-aks-system`. Click **OK**.
+     * Click **+ Associate** again, select `vnet-platform-dev-eus`, and select `snet-aks-app`. Click **OK**.
+
+### 5. Create and Configure Network Security Groups (NSGs)
+1. Search for **Network security groups** in the portal search bar and click **+ Create**.
+2. Configure the basics:
+   * **Resource Group:** `rg-platform-dev-eus`
+   * **Region:** `East US`
+   * **Name:** `nsg-aks-app-dev`
+3. Click **Review + create**, and then **Create**.
+4. Once deployed, open the NSG resource:
+   * Select **Inbound security rules** on the left menu, then click **+ Add**.
+     * **Source:** `IP Addresses`
+     * **Source IP addresses/CIDR ranges:** `10.1.21.0/24` *(DEV Ingress subnet range)*
+     * **Source port ranges:** `*`
+     * **Destination:** `Any`
+     * **Destination port ranges:** `80,443,8080`
+     * **Protocol:** `TCP`
+     * **Action:** `Allow`
+     * **Priority:** `100`
+     * **Name:** `allow-http-ingress`
+     * Click **Add**.
+   * Click **+ Add** to add the block rule:
+     * **Source:** `Any`
+     * **Source port ranges:** `*`
+     * **Destination:** `Any`
+     * **Destination port ranges:** `*`
+     * **Protocol:** `Any`
+     * **Action:** `Deny`
+     * **Priority:** `200`
+     * **Name:** `deny-external-inbound`
+     * Click **Add**.
+   * Select **Subnets** on the left menu, then click **+ Associate**.
+     * **Virtual network:** `vnet-platform-dev-eus`
+     * **Subnet:** `snet-aks-app`
+     * Click **OK**.
+
 ---
 
 ## Part 2 — Shared Services Deployment (Azure Portal)
@@ -195,3 +249,40 @@ Instead of installing ArgoCD via terminal Helm commands, you can deploy and conf
 7. Click **Review + create**, and then **Create**. 
 
 Azure will now automatically deploy the GitOps controller onto the private cluster and sync the App-of-Apps manifests without running a single line of command-line code.
+
+---
+
+## Phase 2, 3, & 4 — Replicating for QA, UAT, & PROD Environments
+
+To deploy the subsequent QA, UAT, and PROD environments manually via the Azure Portal, repeat the configurations detailed in **Part 1**, **Part 2**, and **Part 3** with the following parameter modifications:
+
+### 1. Networking Configurations (Part 1 Repeats)
+Create VNets, Subnets, and Peerings for each environment:
+* **QA Virtual Network:**
+  * Name: `vnet-platform-qa-eus`
+  * Address Space: `10.2.0.0/16`
+  * Subnets: `snet-aks-system` (`10.2.0.0/22`), `snet-aks-app` (`10.2.4.0/20`), `snet-endpoints` (`10.2.20.0/24`), `snet-ingress` (`10.2.21.0/24`).
+* **UAT Virtual Network:**
+  * Name: `vnet-platform-uat-eus`
+  * Address Space: `10.3.0.0/16`
+  * Subnets: `snet-aks-system` (`10.3.0.0/22`), `snet-aks-app` (`10.3.4.0/20`), `snet-endpoints` (`10.3.20.0/24`), `snet-ingress` (`10.3.21.0/24`).
+* **PROD Virtual Network:**
+  * Name: `vnet-platform-prod-eus`
+  * Address Space: `10.4.0.0/16`
+  * Subnets: `snet-aks-system` (`10.4.0.0/22`), `snet-aks-app` (`10.4.4.0/20`), `snet-endpoints` (`10.4.20.0/24`), `snet-ingress` (`10.4.21.0/24`).
+* **Peering & UDR Rules:** Set up peerings between each new spoke VNet and `vnet-hub-shared-eus`. Associate a custom Route Table pointing `0.0.0.0/0` to the Firewall IP `10.0.0.4`.
+
+### 2. Service & Cluster Provisioning (Part 2 & 3 Repeats)
+Provision resources inside their respective resource groups (`rg-platform-qa-eus`, `rg-platform-uat-eus`, `rg-platform-prod-eus`):
+* **Azure Key Vault:** Create vaults named `kv-platform-qa-eus`, `kv-platform-uat-eus`, and `kv-platform-prod-eus` with public access disabled and Private Endpoints mapped to local `snet-endpoints`.
+* **Backup Storage:** Create accounts named `saveleroqaeus`, `savelerouateus`, and `saveleroprodeus` with GRS replication.
+* **AKS Clusters:**
+  * Create clusters named `aks-qa-cluster`, `aks-uat-cluster`, and `aks-prod-cluster`.
+  * Ensure each is private, overlay CNI, and has `systempool`, `apppool`, and `spotpool` pools defined.
+  * Enable OIDC and Workload Identity.
+
+### 3. GitOps Configuration (Part 4 Repeats)
+For each new cluster, configure GitOps under the AKS **GitOps** blade:
+* **For QA Cluster:** Set Path to `envs/qa/` (or `apps/qa-apps.yaml`).
+* **For UAT Cluster:** Set Path to `envs/uat/` (or `apps/uat-apps.yaml`).
+* **For PROD Cluster:** Set Path to `envs/prod/` (or `apps/prod-apps.yaml`).
