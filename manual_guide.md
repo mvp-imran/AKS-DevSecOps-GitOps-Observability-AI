@@ -3,6 +3,17 @@
 
 This guide provides a detailed, step-by-step walkthrough to deploy and configure the entire Enterprise AKS GitOps platform completely using the **Azure Portal** and **Azure DevOps Portal** graphical interfaces, with no automation code required.
 
+> [!IMPORTANT]
+> **FinOps Resource Tagging (Apply to Every Resource):** During every resource creation wizard in this guide, click the **Tags** tab before clicking *Review + create* and add the following mandatory tags:
+> | Tag Key | Example Value |
+> | :--- | :--- |
+> | `Application` | `platform` |
+> | `Environment` | `dev` / `qa` / `uat` / `prod` |
+> | `Owner` | `platform-team` |
+> | `CostCenter` | `CC-12345` |
+>
+> Consistent tagging enables cost attribution per namespace, team, and environment in the OpenCost / Azure Cost Management dashboards.
+
 ---
 
 ## Part 1 — Hub-and-Spoke Networking Setup (Azure Portal)
@@ -362,6 +373,7 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
 2. Click the **Security** tab:
    * Check **Enable OIDC issuer**.
    * Check **Enable Workload Identity**.
+   * Check **Enable Azure Policy** *(This deploys the Azure Policy Gatekeeper add-on, populating the Azure Portal compliance dashboard with Kubernetes security policies such as pod CPU/memory limits and disallowed privileged containers)*.
 
 ### 4. Setup Integrations
 1. Click the **Integrations** tab:
@@ -541,6 +553,20 @@ To build microservices with CI scans and automate promotions across env director
      * Add `ARM_SERVICE_CONNECTION` = `sc-arm-platform-dev-eus`
      * Add `GITOPS_REPO` = `platform-gitops`
    * Click **Save**.
+
+### 8. Review and Merge GitOps Promotion Pull Requests (Azure DevOps Portal)
+When the GitOps Promotion Pipeline (Pipeline 3) creates a Pull Request for UAT or PROD environments, an approver must review and merge it via the GUI:
+1. In the Azure DevOps Portal, navigate to **Repos** ➔ **Pull requests** in the left menu.
+2. Click on the active Pull Request (e.g., *"Promote customer-api v42 to UAT"*).
+3. Review the changes:
+   * Verify the image tag update in `envs/uat/apps/customer-api/kustomization.yaml` (or the equivalent PROD path).
+   * Ensure no unintended file modifications are included.
+4. Add comments if corrections are required, or click **Approve** in the top-right corner.
+5. Once approved, click **Complete** ➔ select **Squash commit** ➔ click **Complete merge**.
+6. ArgoCD will automatically detect the merged change in the `platform-gitops` repository and synchronize the updated image to the target AKS cluster.
+
+> [!IMPORTANT]
+> **For PROD promotions:** Ensure that a Change Advisory Board (CAB) review has been completed before merging, as required by the Phase 16 deployment strategy.
 
 ---
 
