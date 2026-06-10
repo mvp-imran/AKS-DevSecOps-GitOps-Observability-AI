@@ -103,12 +103,13 @@ Prometheus Alert ──► Azure Function ──► Loki Logs + Pod Spec ──�
 ├── prerequisites.md             # Multi-cloud pre-flight validation checklist
 ├── deployment_guide.md          # CLI-based automated PowerShell installation script guide
 ├── manually_deployment_guide.md # GUI-based Azure Portal & Azure DevOps step-by-step walkthrough
-├── post_deployment_test_plan.md # 7 step-by-step post-deployment validation tests
+├── post_deployment_test_plan.md # 10 step-by-step post-deployment validation tests
 ├── e2e_verification_framework.md # E2E testing checklist and strategy document (manual + automated)
 ├── run-e2e-tests.ps1            # Executable PowerShell E2E automated test runner
+├── dr_drill_test_cases.md       # DR drills, test cases, and recovery SLAs runbook
 ├── cred.md                      # Local credentials and variables templates log
 ├── ai_ops_scenarios.md          # 8 step-by-step diagnostic AIOps runbooks
-└── README.md                    # This document
+├── README.md                    # This document
 ```
 
 ---
@@ -122,6 +123,7 @@ To initialize the platform deployment across DEV, QA, UAT, and PROD:
 3.  If you prefer a step-by-step visual walkthrough using the Azure Portal & Azure DevOps interface, follow **[manually_deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/manually_deployment_guide.md)**.
 4.  After deployment, execute the **[post_deployment_test_plan.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/post_deployment_test_plan.md)** to verify and test the network, security, autoscaling, and observability stack health.
 5.  To execute a complete test suite verifying every component dynamically or manually, follow the **[e2e_verification_framework.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/e2e_verification_framework.md)**.
+6.  To run resiliency failover drills and evaluate platform RTO/RPO SLAs, execute the scenarios in **[dr_drill_test_cases.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/dr_drill_test_cases.md)**.
 
 ---
 
