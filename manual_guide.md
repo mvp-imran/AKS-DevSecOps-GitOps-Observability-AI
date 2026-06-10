@@ -371,7 +371,18 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
      * **Application Gateway:** Select **Use existing** and choose `appgw-platform-dev-eus` from the dropdown list. *(This automatically configures the AGIC routing loop)*.
 2. Click **Review + create**, and then **Create**.
 
-### 5. Configure Workload Identity Federated Credentials
+### 5. Configure Ingress Controller (AGIC) IAM Role Assignment
+When AGIC is enabled, AKS automatically provisions a managed identity to sync route changes to the Application Gateway. To grant the necessary network permissions:
+1. Once the cluster is deployed, search for **Managed Identities** in the portal search bar.
+2. Locate the identity created for AGIC (typically named `ingressappgw-<your-cluster-name>`, e.g., `ingressappgw-aks-dev-cluster`).
+3. Navigate to your Application Gateway resource page (**appgw-platform-dev-eus**).
+4. Select **Access control (IAM)** in the left menu ➔ click **+ Add** ➔ select **Add role assignment**.
+5. Configure:
+   * **Role:** **Network Contributor**
+   * **Members:** Select *Managed identity*, search and select the AGIC identity (`ingressappgw-aks-dev-cluster`).
+   * Click **Review + assign**.
+
+### 6. Configure Workload Identity Federated Credentials
 To allow microservices to authenticate securely to Azure Key Vault without client secrets:
 1. Search for **Managed Identities** in the Azure Portal search bar and click **+ Create**.
 2. Set Resource Group: `rg-platform-dev-eus`, Name: `mi-customer-api-dev`, Region: `East US`. Click **Create**.
@@ -389,7 +400,7 @@ To allow microservices to authenticate securely to Azure Key Vault without clien
    * **Members:** Select *Managed identity*, search and add `mi-customer-api-dev`.
    * Click **Review + assign**.
 
-### 6. Configure Managed AKS Backup (Azure Portal Backup Center)
+### 7. Configure Managed AKS Backup (Azure Portal Backup Center)
 As an alternative to Velero commands, configure native Azure Backup for your cluster:
 1. Open your **aks-dev-cluster** resource page in the portal.
 2. Scroll to the **Operations** section in the left menu and click on **Backup**.
@@ -400,7 +411,7 @@ As an alternative to Velero commands, configure native Azure Backup for your clu
    * **Storage account:** Select your storage account `savelerodeveus` and blob container `velero`.
 5. Click **Validate** and then **Configure backup**. Azure will automatically deploy the backup extension and schedule snapshots.
 
-### 7. Configure Istio Service Mesh Add-on (Azure Portal Service Mesh Integration)
+### 8. Configure Istio Service Mesh Add-on (Azure Portal Service Mesh Integration)
 As an alternative to manual Istio Helm charts, enable native Istio integration on AKS:
 1. Open your **aks-dev-cluster** resource page in the portal.
 2. Scroll to the **Settings** section in the left menu and click on **Service Mesh**.
@@ -414,7 +425,7 @@ As an alternative to manual Istio Helm charts, enable native Istio integration o
 
 ## Part 4 — Azure DevOps & GitOps Setup (DevOps Portal)
 
-### 1. Initialize Repositories in Azure DevOps
+### 1. Initialize Repositories and Configure Branch Policies
 1. Open your browser and navigate to your DevOps organization: `https://dev.azure.com/mvfimran`.
 2. Select your Project.
 3. Navigate to **Repos** on the left menu.
@@ -422,6 +433,15 @@ As an alternative to manual Istio Helm charts, enable native Istio integration o
    * Create `platform-infra` (Git).
    * Create `platform-gitops` (Git).
    * Create `customer-api` (Git).
+5. Configure Branch Policies on the protected `main` branch (Phase 3.5 of the deployment plan) to enforce code review gates:
+   * Select your target repository (e.g., `customer-api`) from the repository dropdown at the top.
+   * Select **Branches** under *Repos* in the left menu.
+   * Hover over the `main` branch, click the **three dots (...)** icon, and select **Branch policies**.
+   * Configure the following policies:
+     * **Require a minimum number of reviewers:** Check this box, and set the value to `1`.
+     * **Check for comment resolution:** Check this box and select **Required** *(forces all discussion threads to be closed before merge)*.
+     * **Build Validation:** Click **+ Add build policy** ➔ Select your application CI build pipeline from the dropdown ➔ Set Trigger to **Automatic** and Policy requirement to **Required** ➔ Click **Save**.
+     * **Limit merge types:** Check this box and check **Squash merge** only *(enforces squash commits to maintain a linear git history)*.
 
 ### 2. Configure GitOps via the Azure Portal Extension (No CLI required)
 Instead of installing ArgoCD via terminal Helm commands, you can deploy and configure GitOps directly from the Azure Portal:
@@ -445,14 +465,21 @@ Instead of installing ArgoCD via terminal Helm commands, you can deploy and conf
 
 Azure will now automatically deploy the GitOps controller onto the private cluster and sync the App-of-Apps manifests without running a single line of command-line code.
 
-### 3. Exposing Grafana & Observability Dashboards via ArgoCD UI
-Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operator (`kube-prometheus-stack`) and Loki. To access the Grafana GUI dashboards without kubectl command-lines:
-1. Access the ArgoCD dashboard GUI on your browser.
-2. Click on the **`kube-prometheus-stack`** application block.
-3. Click **App Details** (top menu) -> select **Parameters** tab.
-4. Scroll to locate `grafana.ingress.enabled` and set its value to `true`.
-5. Locate `grafana.ingress.hosts` and input your registered domain mapping, e.g., `grafana.dev.customer-api.mvfimran.com`.
-6. Click **Save** (ArgoCD will automatically reconcile and deploy the ingress route, allowing you to access Grafana directly at that DNS address).
+### 3. Exposing Grafana & Distributed Tracing (Jaeger) Dashboards via ArgoCD UI
+Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operator (`kube-prometheus-stack`), Loki, and Jaeger. To access the Grafana and Jaeger GUI dashboards without kubectl command-lines:
+1. **Expose Grafana:**
+   * Access the ArgoCD dashboard GUI on your browser.
+   * Click on the **`kube-prometheus-stack`** application block.
+   * Click **App Details** (top menu) ➔ select the **Parameters** tab.
+   * Scroll to locate `grafana.ingress.enabled` and set its value to `true`.
+   * Locate `grafana.ingress.hosts` and input your registered domain mapping, e.g., `grafana.dev.customer-api.mvfimran.com`.
+   * Click **Save** *(ArgoCD will automatically reconcile and deploy the ingress route)*.
+2. **Expose Jaeger UI:**
+   * In the ArgoCD dashboard GUI, click on the **`jaeger`** application block.
+   * Click **App Details** (top menu) ➔ select the **Parameters** tab.
+   * Scroll to locate `query.ingress.enabled` and set its value to `true`.
+   * Locate `query.ingress.hosts` and input your registered domain mapping, e.g., `jaeger.dev.customer-api.mvfimran.com`.
+   * Click **Save** *(ArgoCD will reconcile and deploy the ingress route, enabling access to the Jaeger UI)*.
 
 ### 4. Import the OpenCost FinOps Dashboard in Grafana GUI
 To visualize OpenCost cluster expenditures (Phase 12 of the deployment plan) inside your Grafana dashboard:
@@ -560,12 +587,62 @@ To deploy the AIOps incident response assistant (reducing MTTR to < 2 minutes) e
    * Select your Function App `func-aiops-connector-dev`.
    * Click **Review + assign**.
 6. Register the Environment Variables:
-   * Open the Function App -> select **Configuration** under *Settings* in the left menu.
+   * Open the Function App ➔ select **Configuration** under *Settings* in the left menu.
    * Click **+ New application setting** to add these keys:
      * `AZURE_OPENAI_ENDPOINT` = *The Endpoint URL copied from your Azure OpenAI Keys page.*
      * `AZURE_OPENAI_DEPLOYMENT` = `gpt-rca-model`
      * `TEAMS_WEBHOOK_URL` = *Your Microsoft Teams / Slack Channel Incoming Webhook URL.*
    * Click **Save** and then **Confirm**.
+7. Create and Deploy Function Code via the Browser:
+   * In the Function App page, click **Create** under the *Functions* sidebar category.
+   * Select **HTTP trigger** ➔ set Name: `rca-processor` ➔ click **Create**.
+   * Once created, click **Code + Test** under *Developer* in the left menu.
+   * Select the code file in the dropdown (e.g. `__init__.py` for Python) and paste the following Python handler that coordinates the webhook telemetry analysis with Azure OpenAI:
+     ```python
+     import os
+     import json
+     import requests
+     import azure.functions as func
+     from azure.identity import DefaultAzureCredential
+
+     def main(req: func.HttpRequest) -> func.HttpResponse:
+         try:
+             req_body = req.get_json()
+             alert_name = req_body['alerts'][0]['labels']['alertname']
+             pod_name = req_body['alerts'][0]['labels'].get('pod', 'N/A')
+             namespace = req_body['alerts'][0]['labels'].get('namespace', 'N/A')
+             
+             # Request Token from Azure AD using System Assigned Managed Identity
+             credential = DefaultAzureCredential()
+             token = credential.get_token("https://cognitiveservices.azure.com/.default")
+             
+             # Format OpenAI Request
+             openai_url = f"{os.getenv('AZURE_OPENAI_ENDPOINT')}/openai/deployments/{os.getenv('AZURE_OPENAI_DEPLOYMENT')}/chat/completions?api-version=2023-05-15"
+             payload = {
+                 "messages": [
+                     {"role": "system", "content": "You are a professional Site Reliability Engineer. Provide Root Cause Analysis and action steps based on pod configurations and metrics."},
+                     {"role": "user", "content": f"Alert: {alert_name}\nPod: {pod_name}\nNamespace: {namespace}\nExplain root cause and mitigation."}
+                 ]
+             }
+             headers = {
+                 "Authorization": f"Bearer {token.token}",
+                 "Content-Type": "application/json"
+             }
+             
+             # Query Azure OpenAI
+             response = requests.post(openai_url, json=payload, headers=headers)
+             rca_text = response.json()['choices'][0]['message']['content']
+             
+             # Send payload to MS Teams Channel Webhook
+             teams_payload = {
+                 "text": f"🔴 **AIOps Incident Alert**\n\n**Alert:** {alert_name}\n**Pod:** {pod_name} (Namespace: {namespace})\n\n**Azure OpenAI RCA Assistant:**\n{rca_text}"
+             }
+             requests.post(os.getenv('TEAMS_WEBHOOK_URL'), json=teams_payload)
+             return func.HttpResponse("Successfully processed and forwarded alert.", status_code=200)
+         except Exception as e:
+             return func.HttpResponse(f"Error: {str(e)}", status_code=500)
+     ```
+   * Click **Save** and then test the execution using the **Test/Run** panel in the portal GUI.
 
 ---
 
