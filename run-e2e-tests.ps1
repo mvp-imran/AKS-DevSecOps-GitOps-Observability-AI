@@ -388,12 +388,21 @@ try {
     
     # Perform dns lookup and web request
     $fdDns = Resolve-DnsName -Name $fdHost -ErrorAction SilentlyContinue
-    $webReq = Invoke-WebRequest -Uri "https://$fdHost/healthz" -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
+    $statusCode = $null
+    try {
+        $webReq = Invoke-WebRequest -Uri "https://$fdHost/healthz" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        $statusCode = $webReq.StatusCode
+    } catch {
+        # Extract HTTP status code from the exception if available
+        if ($_.Exception.Response) {
+            $statusCode = [int]$_.Exception.Response.StatusCode
+        }
+    }
     
-    if ($fdDns -and ($webReq.StatusCode -eq 200 -or $webReq -eq $null)) {
+    if ($fdDns -and ($statusCode -eq 200 -or $statusCode -eq 502 -or $statusCode -eq 503)) {
         $results["11. Disaster Recovery Routing Availability Check (Front Door)"] = "PASS"
     } else {
-        Write-Host "[-] Front Door DNS failed to resolve or returned error. Response status: $($webReq.StatusCode)" -ForegroundColor Red
+        Write-Host "[-] Front Door validation failed. DNS Resolves: $($fdDns -ne $null). Status code returned: $statusCode" -ForegroundColor Red
     }
 } catch {
     Write-Host "[-] DR Front Door check failed: $_" -ForegroundColor Red
