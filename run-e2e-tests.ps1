@@ -110,39 +110,145 @@ try {
 }
 Show-Status "4. Admission Control Rules (Kyverno Block Policies)" $results["4. Admission Control Rules (Kyverno Block Policies)"]
 
-# 5. Check Workload Identity & CSI Secret Mounting
+# 5. Check Workload Identity & CSI Secret Mounting (Automated Pod lifecycle)
 try {
-    Write-Host "`n[+] Verifying CSI Key Vault Secret Mounting..." -ForegroundColor Yellow
-    # Read the mounted secret from the running test-secret-pod
-    $secretVal = kubectl exec test-secret-pod -n $Namespace -- cat /mnt/secrets/prod-db-password 2>&1
-    if ($LASTEXITCODE -eq 0 -and $secretVal -ne $null -and $secretVal -notmatch "Error") {
-        $results["5. Workload Identity & CSI Secret Mounting"] = "PASS"
+    Write-Host "`n[+] Verifying CSI Key Vault Secret Mounting (Creating temporary pod)..." -ForegroundColor Yellow
+    $miClientId = az identity show --name "mi-customer-api-dev" --resource-group $ResourceGroupName --query "clientId" -o tsv 2>&1
+    $tenantId = az account show --query "tenantId" -o tsv 2>&1
+    
+    if ($LASTEXITCODE -eq 0 -and $miClientId -ne "" -and $tenantId -ne "") {
+        $tempYaml = @"
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: e2e-kv-provider
+  namespace: $Namespace
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    useVMManagedIdentity: "false"
+    userAssignedIdentityID: "$miClientId"
+    keyvaultName: "$KeyVaultName"
+    cloudName: ""
+    objects:  |
+      array:
+        - |
+          objectName: prod-db-password
+          objectType: secret
+          objectVersion: ""
+    tenantId: "$tenantId"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: e2e-secret-pod
+  namespace: $Namespace
+  labels:
+    azure.workload.identity/use: "true"
+spec:
+  serviceAccountName: customer-api-sa
+  containers:
+  - name: web
+    image: nginx:1.25-alpine
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+    volumeMounts:
+    - name: secrets-store-inline
+      mountPath: "/mnt/secrets"
+      readOnly: true
+  volumes:
+  - name: secrets-store-inline
+    csi:
+      driver: secrets-store.csi.k8s.io
+      readOnly: true
+      volumeAttributes:
+        secretProviderClass: "e2e-kv-provider"
+"@
+        $tempYamlPath = Join-Path $env:TEMP "e2e-secret-test.yaml"
+        $tempYaml | Out-File -FilePath $tempYamlPath -Encoding utf8
+        kubectl apply -f $tempYamlPath | Out-Null
+        
+        Write-Host "Waiting for secrets test pod to start (up to 45 seconds)..."
+        $timeout = 45
+        $elapsed = 0
+        $podReady = $false
+        while ($elapsed -lt $timeout) {
+            $status = kubectl get pod e2e-secret-pod -n $Namespace -o jsonpath='{.status.phase}' 2>&1
+            if ($status -eq "Running") {
+                $podReady = $true
+                break
+            }
+            Start-Sleep -Seconds 3
+            $elapsed += 3
+        }
+        
+        if ($podReady) {
+            $secretVal = kubectl exec e2e-secret-pod -n $Namespace -- cat /mnt/secrets/prod-db-password 2>&1
+            if ($LASTEXITCODE -eq 0 -and $secretVal -ne $null -and $secretVal -notmatch "Error") {
+                $results["5. Workload Identity & CSI Secret Mounting"] = "PASS"
+            } else {
+                Write-Host "[-] CSI Secret verification failed. Output: $secretVal" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "[-] Secrets test pod failed to reach Running state." -ForegroundColor Red
+        }
+        
+        # Cleanup
+        kubectl delete -f $tempYamlPath --ignore-not-found --now | Out-Null
+        Remove-Item $tempYamlPath -ErrorAction SilentlyContinue
     } else {
-        Write-Host "[-] CSI Secret verification failed. Output: $secretVal" -ForegroundColor Red
+        Write-Host "[-] Managed identity or Tenant retrieval failed. ClientID: $miClientId, TenantID: $tenantId" -ForegroundColor Red
     }
 } catch {
     Write-Host "[-] Secret mounting verification crashed: $_" -ForegroundColor Red
 }
 Show-Status "5. Workload Identity & CSI Secret Mounting" $results["5. Workload Identity & CSI Secret Mounting"]
 
-# 6. Check GitOps Applications Status
+# 6. Check GitOps Applications Status (Supports ArgoCD & Flux)
 try {
-    Write-Host "`n[+] Checking ArgoCD Application sync status..." -ForegroundColor Yellow
-    # Get Applications status in the gitops namespace
-    $apps = kubectl get applications -n gitops -o json
-    if ($apps -and $apps -notmatch "No resources found") {
-        $appsObj = $apps | ConvertFrom-Json
-        $failedApps = $appsObj.items | Where-Object { $_.status.sync.status -ne "Synced" -or $_.status.health.status -ne "Healthy" }
-        if ($failedApps.Count -eq 0) {
-            $results["6. GitOps Reconciliation & ArgoCD Status"] = "PASS"
-        } else {
-            foreach ($app in $failedApps) {
-                Write-Host "[-] App: $($app.metadata.name) is Sync: $($app.status.sync.status), Health: $($app.status.health.status)" -ForegroundColor Red
+    Write-Host "`n[+] Checking GitOps sync status..." -ForegroundColor Yellow
+    $hasArgo = kubectl get crd 2>&1 | Select-String "applications.argoproj.io" -Quiet
+    $hasFlux = kubectl get crd 2>&1 | Select-String "kustomizations.kustomize.toolkit.fluxcd.io" -Quiet
+    
+    if ($hasArgo) {
+        Write-Host "[*] ArgoCD detected. Checking applications..."
+        $apps = kubectl get applications -n gitops -o json
+        if ($apps -and $apps -notmatch "No resources") {
+            $appsObj = $apps | ConvertFrom-Json
+            $failedApps = $appsObj.items | Where-Object { $_.status.sync.status -ne "Synced" -or $_.status.health.status -ne "Healthy" }
+            if ($failedApps.Count -eq 0) {
+                $results["6. GitOps Reconciliation & ArgoCD Status"] = "PASS"
+            } else {
+                foreach ($app in $failedApps) {
+                    Write-Host "[-] App: $($app.metadata.name) is Sync: $($app.status.sync.status), Health: $($app.status.health.status)" -ForegroundColor Red
+                }
             }
         }
+    } elseif ($hasFlux) {
+        Write-Host "[*] Flux detected. Checking kustomizations..."
+        $kusts = kubectl get kustomizations -A -o json
+        if ($kusts -and $kusts -notmatch "No resources") {
+            $kustsObj = $kusts | ConvertFrom-Json
+            $failedKusts = $kustsObj.items | Where-Object { $_.status.conditions[0].status -ne "True" }
+            if ($failedKusts.Count -eq 0) {
+                $results["6. GitOps Reconciliation & ArgoCD Status"] = "PASS"
+            } else {
+                foreach ($k in $failedKusts) {
+                    Write-Host "[-] Flux Kustomization: $($k.metadata.name) is unhealthy." -ForegroundColor Red
+                }
+            }
+        }
+    } else {
+        Write-Host "[-] No GitOps operator (ArgoCD or Flux) CRDs found in cluster." -ForegroundColor Red
     }
 } catch {
-    Write-Host "[-] ArgoCD status check failed: $_" -ForegroundColor Red
+    Write-Host "[-] GitOps status check failed: $_" -ForegroundColor Red
 }
 Show-Status "6. GitOps Reconciliation & ArgoCD Status" $results["6. GitOps Reconciliation & ArgoCD Status"]
 
@@ -150,14 +256,14 @@ Show-Status "6. GitOps Reconciliation & ArgoCD Status" $results["6. GitOps Recon
 try {
     Write-Host "`n[+] Verifying Observability backend endpoint health..." -ForegroundColor Yellow
     
-    $prometheusSVC = kubectl get svc kube-prometheus-stack-prometheus -n monitoring -o jsonpath='{.status.loadBalancer.ingress}' 2>&1
-    $lokiSVC = kubectl get svc loki -n monitoring -o jsonpath='{.spec.clusterIP}' 2>&1
-    $jaegerSVC = kubectl get svc jaeger-query -n monitoring -o jsonpath='{.spec.clusterIP}' 2>&1
+    $lokiExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "loki" -Quiet
+    $jaegerExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "jaeger" -Quiet
+    $promExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "prometheus" -Quiet
     
-    if ($lokiSVC -ne "" -and $jaegerSVC -ne "") {
+    if ($lokiExists -and $jaegerExists -and $promExists) {
         $results["7. Observability Backend Endpoint Health"] = "PASS"
     } else {
-        Write-Host "[-] Service endpoints check: Loki: $lokiSVC, Jaeger: $jaegerSVC" -ForegroundColor Red
+        Write-Host "[-] Observability services check: Loki: $lokiExists, Jaeger: $jaegerExists, Prometheus: $promExists" -ForegroundColor Red
     }
 } catch {
     Write-Host "[-] Observability check failed: $_" -ForegroundColor Red
