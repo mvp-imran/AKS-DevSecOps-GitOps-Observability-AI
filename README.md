@@ -103,6 +103,7 @@ Prometheus Alert ──► Azure Function ──► Loki Logs + Pod Spec ──�
 ├── prerequisites.md             # Multi-cloud pre-flight validation checklist
 ├── deployment_guide.md          # CLI-based automated PowerShell installation script guide
 ├── manually_deployment_guide.md # GUI-based Azure Portal & Azure DevOps step-by-step walkthrough
+├── post_deployment_test_plan.md # 7 step-by-step post-deployment validation tests
 ├── cred.md                      # Local credentials and variables templates log
 ├── ai_ops_scenarios.md          # 8 step-by-step diagnostic AIOps runbooks
 └── README.md                    # This document
@@ -117,6 +118,7 @@ To initialize the platform deployment across DEV, QA, UAT, and PROD:
 1.  Review **[prerequisites.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/prerequisites.md)** to verify your subscription permissions and region quotas.
 2.  If you want to deploy using automated script workflows, follow **[deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/deployment_guide.md)**.
 3.  If you prefer a step-by-step visual walkthrough using the Azure Portal & Azure DevOps interface, follow **[manually_deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/manually_deployment_guide.md)**.
+4.  After deployment, execute the **[post_deployment_test_plan.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/post_deployment_test_plan.md)** to verify and test the network, security, autoscaling, and observability stack health.
 
 ---
 
