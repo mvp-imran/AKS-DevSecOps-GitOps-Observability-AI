@@ -76,6 +76,7 @@ By embedding Azure OpenAI to dynamically evaluate cluster errors, we achieve a *
 ├── skills/                      # Architectural Master guidelines and expert rules
 ├── prerequisites.md             # Multi-cloud pre-flight validation checklist
 ├── deployment_guide.md          # Phased installation guide (DEV, QA, UAT, PROD)
+├── manually_deployment_guide.md # Step-by-step Azure Portal & Azure DevOps GUI walkthrough
 ├── cred.md                      # Local credentials and variables templates log
 ├── ai_ops_scenarios.md          # 8 step-by-step diagnostic AIOps runbooks
 └── README.md                    # This document
@@ -90,6 +91,7 @@ To prepare your local Windows 11 workstation, authenticate with Azure, configure
 1. Read **[prerequisites.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/prerequisites.md)** to verify your Azure subscription privileges and quotas.
 2. Read **[deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/deployment_guide.md)** and execute Part 1 to install the command-line tools (`Git`, `Azure CLI`, `Terraform`, `kubectl`, `Helm`, `Kustomize`).
 3. Fill out the variable block in **Part 2** of the deployment guide and run the steps to deploy the landing zones and configure ArgoCD.
+4. Alternatively, if you prefer to deploy the entire platform using graphical user interfaces (Azure Portal & Azure DevOps Portal) instead of CLI commands, follow **[manually_deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/manually_deployment_guide.md)**.
 
 ---
 
