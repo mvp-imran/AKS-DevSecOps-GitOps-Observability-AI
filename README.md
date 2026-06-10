@@ -9,6 +9,8 @@
 
 This repository contains a **production-ready, enterprise-grade Kubernetes landing zone blueprint** built on Azure AKS, aligned with the **Microsoft Cloud Adoption Framework (CAF)** and the **Azure Well-Architected Framework**. 
 
+Explore the **[platform_mindmap.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/platform_mindmap.md)** to visualize the end-to-end workflow, deployment order, E2E testing framework, and DR drill scenarios.
+
 Designed to support hundreds of microservices, it bridges the gap between infrastructure provisioning (Day 1) and ongoing site reliability operations (Day 2) by embedding security compliance, cost governance, automated pipelines, and **GPT-powered AI Operations (AIOps)** directly into the platform fabric.
 
 ---
@@ -102,6 +104,7 @@ Prometheus Alert ──► Azure Function ──► Loki Logs + Pod Spec ──�
 ├── skills/                      # Architectural Master guidelines and expert rules
 ├── prerequisites.md             # Multi-cloud pre-flight validation checklist
 ├── deployment _plan.md          # Master architectural roadmap and platform targets
+├── platform_mindmap.md          # Visual mind map of workflow, deployment, testing, and DR drills
 ├── deployment_guide.md          # CLI-based automated PowerShell installation script guide
 ├── manually_deployment_guide.md # GUI-based Azure Portal & Azure DevOps step-by-step walkthrough
 ├── post_deployment_test_plan.md # 10 step-by-step post-deployment validation tests
