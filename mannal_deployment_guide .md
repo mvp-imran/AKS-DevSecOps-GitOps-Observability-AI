@@ -215,6 +215,35 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
    * **Container registry:** Select `acrplatformdeveus` in the dropdown. This automatically configures the `AcrPull` role assignment for the cluster.
 2. Click **Review + create**, and then **Create**.
 
+### 5. Configure Workload Identity Federated Credentials
+To allow microservices to authenticate securely to Azure Key Vault without client secrets:
+1. Search for **Managed Identities** in the Azure Portal search bar and click **+ Create**.
+2. Set Resource Group: `rg-platform-dev-eus`, Name: `mi-customer-api-dev`, Region: `East US`. Click **Create**.
+3. Once created, open the Managed Identity:
+   * Select **Federated credentials** under Settings, then click **+ Add**.
+   * **Federated credential scenario:** Select **Kubernetes accessing Azure resources**.
+   * **Cluster details:** Select your subscription, Resource Group `rg-platform-dev-eus`, and AKS Cluster `aks-dev-cluster`.
+   * **Namespace:** Enter `dev` (the application namespace).
+   * **Service account:** Enter `customer-api-sa` (matching your microservice deployment).
+   * **Name:** `fed-cred-customer-api-dev`.
+   * Click **Add**.
+4. Grant Key Vault permissions to the identity:
+   * Open **kv-platform-dev-eus** (Key Vault) ➔ **Access control (IAM)** ➔ **+ Add role assignment**.
+   * **Role:** **Key Vault Secrets User**.
+   * **Members:** Select *Managed identity*, search and add `mi-customer-api-dev`.
+   * Click **Review + assign**.
+
+### 6. Configure Managed AKS Backup (Azure Portal Backup Center)
+As an alternative to Velero commands, configure native Azure Backup for your cluster:
+1. Open your **aks-dev-cluster** resource page in the portal.
+2. Scroll to the **Operations** section in the left menu and click on **Backup**.
+3. Click **Configure backup**.
+4. Configure the backup details:
+   * **Backup vault:** Click *Create new* if none exists. Set Name: `bkv-platform-dev-eus`, Resource Group: `rg-platform-dev-eus`.
+   * **Backup policy:** Click *Create new*. Define Schedule: `Daily` at 1:00 AM, Retention: `30 days`. Name the policy `daily-aks-backup`.
+   * **Storage account:** Select your storage account `savelerodeveus` and blob container `velero`.
+5. Click **Validate** and then **Configure backup**. Azure will automatically deploy the backup extension and schedule snapshots.
+
 ---
 
 ## Part 4 — Azure DevOps & GitOps Setup (DevOps Portal)
@@ -258,6 +287,13 @@ Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operato
 4. Scroll to locate `grafana.ingress.enabled` and set its value to `true`.
 5. Locate `grafana.ingress.hosts` and input your registered domain mapping, e.g., `grafana.dev.customer-api.mvfimran.com`.
 6. Click **Save** (ArgoCD will automatically reconcile and deploy the ingress route, allowing you to access Grafana directly at that DNS address).
+
+### 4. Auditing Compliance and Security Policies (Azure Portal)
+To verify that Kyverno policies (Phase 8 of the deployment plan) are operating correctly and protecting the cluster:
+1. Open your **aks-dev-cluster** resource page in the Azure Portal.
+2. Under the **Settings** section in the left menu, click on **Policies**.
+3. You will see a compliance dashboard displaying compliance state for your pods.
+4. Click on the policy names (such as **Kubernetes cluster pods should only use allowed volume types** or **Kubernetes cluster containers should run with CPU/Memory limits**) to view the list of non-compliant pods or blocked events.
 
 ---
 
