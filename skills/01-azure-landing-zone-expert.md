@@ -56,3 +56,8 @@ Example:
 rg-platform-dev
 aks-dev-eastus
 acrplatformprod
+
+## Security Recommendations (Suggested)
+
+- Disable public network access on all Key Vaults and Container Registries (Enforce Private Endpoints).
+- Configure Azure Firewall Premium in IDPS Alert and Deny mode.

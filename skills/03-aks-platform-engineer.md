@@ -43,3 +43,8 @@ istio-system
 - Terraform
 - Helm
 - Kubernetes YAML
+
+## Security Recommendations (Suggested)
+
+- Require Microsoft Entra Privileged Identity Management (PIM) for JIT access to Cluster Admin roles.
+- Enforce Seccomp profiles (RuntimeDefault) on all workloads.

@@ -37,3 +37,8 @@ Key Vault CSI
 Never use:
 
 hardcoded secrets
+
+## Security Recommendations (Suggested)
+
+- Enforce automated secret rotation in Azure Key Vault.
+- Restrict egress rules in Kyverno to whitelisted domains only.
