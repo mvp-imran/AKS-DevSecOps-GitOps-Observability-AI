@@ -101,6 +101,7 @@ Prometheus Alert ──► Azure Function ──► Loki Logs + Pod Spec ──�
 │           └── prod/            # PROD orchestration configurations
 ├── skills/                      # Architectural Master guidelines and expert rules
 ├── prerequisites.md             # Multi-cloud pre-flight validation checklist
+├── deployment _plan.md          # Master architectural roadmap and platform targets
 ├── deployment_guide.md          # CLI-based automated PowerShell installation script guide
 ├── manually_deployment_guide.md # GUI-based Azure Portal & Azure DevOps step-by-step walkthrough
 ├── post_deployment_test_plan.md # 10 step-by-step post-deployment validation tests
@@ -118,12 +119,13 @@ Prometheus Alert ──► Azure Function ──► Loki Logs + Pod Spec ──�
 
 To initialize the platform deployment across DEV, QA, UAT, and PROD:
 
-1.  Review **[prerequisites.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/prerequisites.md)** to verify your subscription permissions and region quotas.
-2.  If you want to deploy using automated script workflows, follow **[deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/deployment_guide.md)**.
-3.  If you prefer a step-by-step visual walkthrough using the Azure Portal & Azure DevOps interface, follow **[manually_deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/manually_deployment_guide.md)**.
-4.  After deployment, execute the **[post_deployment_test_plan.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/post_deployment_test_plan.md)** to verify and test the network, security, autoscaling, and observability stack health.
-5.  To execute a complete test suite verifying every component dynamically or manually, follow the **[e2e_verification_framework.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/e2e_verification_framework.md)**.
-6.  To run resiliency failover drills and evaluate platform RTO/RPO SLAs, execute the scenarios in **[dr_drill_test_cases.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/dr_drill_test_cases.md)**.
+1.  Align your business goals with the master architectural roadmap in **[deployment _plan.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/deployment%20_plan.md)**.
+2.  Review **[prerequisites.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/prerequisites.md)** to verify your subscription permissions and region quotas.
+3.  If you want to deploy using automated script workflows, follow **[deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/deployment_guide.md)**.
+4.  If you prefer a step-by-step visual walkthrough using the Azure Portal & Azure DevOps interface, follow **[manually_deployment_guide.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/manually_deployment_guide.md)**.
+5.  After deployment, execute the **[post_deployment_test_plan.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/post_deployment_test_plan.md)** to verify and test the network, security, autoscaling, and observability stack health.
+6.  To execute a complete test suite verifying every component dynamically or manually, follow the **[e2e_verification_framework.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/e2e_verification_framework.md)**.
+7.  To run resiliency failover drills and evaluate platform RTO/RPO SLAs, execute the scenarios in **[dr_drill_test_cases.md](file:///c:/RnD/AKS-DevSecOps-GitOps-Observability-AI/dr_drill_test_cases.md)**.
 
 ---
 
