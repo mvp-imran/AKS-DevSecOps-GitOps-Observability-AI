@@ -181,6 +181,57 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
      * **Subnet:** `snet-aks-app`
      * Click **OK**.
 
+### 8. Create Network Security Groups for System and Ingress Subnets
+
+1. **Create System Node Pool NSG (`nsg-aks-system-dev`):**
+   * Search for **Network security groups** and click **+ Create**.
+   * **Resource Group:** `rg-platform-dev-eus`, **Region:** `East US`, **Name:** `nsg-aks-system-dev`.
+   * Click **Review + create**, then **Create**.
+   * Once deployed, open the NSG resource:
+     * Select **Inbound security rules**, click **+ Add**:
+       * **Source:** `IP Addresses`
+       * **Source IP addresses/CIDR ranges:** `10.0.0.0/16` *(Hub VNet — management traffic only)*
+       * **Destination port ranges:** `443,10250`
+       * **Protocol:** `TCP`
+       * **Action:** `Allow`
+       * **Priority:** `100`
+       * **Name:** `allow-hub-management`
+       * Click **Add**.
+     * Click **+ Add** for the block rule:
+       * **Source:** `Any`, **Destination port ranges:** `*`
+       * **Protocol:** `Any`, **Action:** `Deny`, **Priority:** `200`
+       * **Name:** `deny-all-inbound`
+       * Click **Add**.
+   * Select **Subnets** → **+ Associate** → VNet: `vnet-platform-dev-eus`, Subnet: `snet-aks-system` → Click **OK**.
+
+2. **Create Ingress Subnet NSG (`nsg-ingress-dev`):**
+   * Search for **Network security groups** and click **+ Create**.
+   * **Resource Group:** `rg-platform-dev-eus`, **Region:** `East US`, **Name:** `nsg-ingress-dev`.
+   * Click **Review + create**, then **Create**.
+   * Once deployed, open the NSG resource:
+     * Select **Inbound security rules**, click **+ Add**:
+       * **Source:** `Service Tag`, **Source service tag:** `Internet`
+       * **Destination port ranges:** `80,443`
+       * **Protocol:** `TCP`
+       * **Action:** `Allow`
+       * **Priority:** `100`
+       * **Name:** `allow-http-https-internet`
+       * Click **Add**.
+     * Click **+ Add** for Application Gateway v2 health probes:
+       * **Source:** `Service Tag`, **Source service tag:** `GatewayManager`
+       * **Destination port ranges:** `65200-65535`
+       * **Protocol:** `TCP`
+       * **Action:** `Allow`
+       * **Priority:** `110`
+       * **Name:** `allow-appgw-health-probes`
+       * Click **Add**.
+     * Click **+ Add** for the block rule:
+       * **Source:** `Any`, **Destination port ranges:** `*`
+       * **Protocol:** `Any`, **Action:** `Deny`, **Priority:** `200`
+       * **Name:** `deny-all-other-inbound`
+       * Click **Add**.
+   * Select **Subnets** → **+ Associate** → VNet: `vnet-platform-dev-eus`, Subnet: `snet-ingress` → Click **OK**.
+
 ---
 
 ## Part 2 — Shared Services Deployment (Azure Portal)
@@ -214,6 +265,7 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
    * **Key vault name:** `kv-platform-dev-eus`.
    * **Location:** `East US`.
    * **Pricing tier:** *Standard*.
+   * Check **Enable purge protection** *(Prevents permanent deletion of secrets for 90 days; recommended for production compliance)*.
 3. In the **Access configuration** tab:
    * Select **Azure role-based access control (RBAC)**.
 4. In the **Networking** tab:
@@ -324,6 +376,25 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
    * Check **Enable WAF** (Web Application Firewall).
    * Under *WAF policy*, click *Create new*. Name it `waf-fd-platform-dev`, set Mode to **Prevention**, and click *Create*.
 7. Click **Review + create**, and then **Create**.
+
+### 6. Provision Terraform State Storage (Required for IaC Pipelines)
+Even in a GUI-only workflow, Pipeline 1 (Infrastructure IaC) requires a Terraform remote backend to store state files:
+1. Search for **Resource groups** and click **+ Create**.
+   * **Subscription:** Select your target subscription.
+   * **Resource group:** `rg-platform-tfstate-eus`
+   * **Region:** `East US`
+   * Click **Review + create**, then **Create**.
+2. Search for **Storage accounts** and click **+ Create**.
+   * **Resource Group:** Select `rg-platform-tfstate-eus`.
+   * **Storage account name:** Enter a globally unique name, e.g., `saplatformtfstate01`.
+   * **Region:** `East US`
+   * **Performance:** *Standard*.
+   * **Redundancy:** Select **Locally-redundant storage (LRS)**.
+   * Click **Review + create**, then **Create**.
+3. Once deployed, open the Storage Account:
+   * Select **Containers** under *Data storage*, click **+ Container**.
+   * **Name:** `tfstate`, **Access level:** Private.
+   * Click **Create**.
 
 ---
 
@@ -477,6 +548,9 @@ Instead of installing ArgoCD via terminal Helm commands, you can deploy and conf
 
 Azure will now automatically deploy the GitOps controller onto the private cluster and sync the App-of-Apps manifests without running a single line of command-line code.
 
+> [!TIP]
+> **ArgoCD Direct Repository Credentials (if not using Flux):** If you selected ArgoCD as the operator type and need to configure additional private repositories, open the ArgoCD Dashboard GUI → **Settings** → **Repositories** → click **+ Connect Repo** → Connection method: `HTTPS` → URL: `https://dev.azure.com/mvfimran/_git/platform-gitops` → Username: `gitops-bot` → Password: *paste your Azure DevOps PAT* → click **Connect**.
+
 ### 3. Exposing Grafana & Distributed Tracing (Jaeger) Dashboards via ArgoCD UI
 Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operator (`kube-prometheus-stack`), Loki, and Jaeger. To access the Grafana and Jaeger GUI dashboards without kubectl command-lines:
 1. **Expose Grafana:**
@@ -492,6 +566,26 @@ Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operato
    * Scroll to locate `query.ingress.enabled` and set its value to `true`.
    * Locate `query.ingress.hosts` and input your registered domain mapping, e.g., `jaeger.dev.customer-api.mvfimran.com`.
    * Click **Save** *(ArgoCD will reconcile and deploy the ingress route, enabling access to the Jaeger UI)*.
+3. **Configure Loki Log Data Source in Grafana:**
+   * Open your browser and navigate to the exposed Grafana URL.
+   * Log in using your admin credentials (default: `admin` / password from `kube-prometheus-stack` Helm values).
+   * In the left menu, click **Connections** → **Data sources** → click **+ Add new data source**.
+   * Select **Loki** from the list.
+   * **URL:** Enter `http://loki.monitoring.svc.cluster.local:3100` *(Internal Kubernetes DNS address of Loki)*.
+   * Click **Save & test** to verify connectivity. A green banner confirms Loki is reachable.
+   * Navigate to **Explore** in the left menu → select **Loki** as the data source → run the query `{namespace="dev"}` to verify log ingestion from Promtail.
+4. **Deploy OpenTelemetry Collector via ArgoCD:**
+   * In the ArgoCD dashboard GUI, click **+ New App** (top-left).
+   * Configure the Application:
+     * **Application Name:** `opentelemetry-collector`
+     * **Project:** `default`
+     * **Sync Policy:** `Automatic`
+     * **Repository URL:** `https://open-telemetry.github.io/opentelemetry-helm-charts`
+     * **Chart:** `opentelemetry-collector`
+     * **Revision:** *(latest)*
+     * **Cluster URL:** `https://kubernetes.default.svc`
+     * **Namespace:** `monitoring`
+   * Click **Create**. ArgoCD will deploy the OpenTelemetry Collector, which receives traces and metrics from application SDKs and forwards them to Prometheus, Loki, and Jaeger backends.
 
 ### 4. Import the OpenCost FinOps Dashboard in Grafana GUI
 To visualize OpenCost cluster expenditures (Phase 12 of the deployment plan) inside your Grafana dashboard:
@@ -533,9 +627,25 @@ To allow Azure DevOps pipelines to securely authenticate to Azure resources and 
      * Check **Grant access permission to all pipelines**.
    * Click **Save**.
 
-### 7. Create Build and GitOps Promotion Pipelines (Azure DevOps Portal)
-To build microservices with CI scans and automate promotions across env directories:
-1. **Create Pipeline 2 (Application CI Pipeline):**
+### 7. Create Build, IaC, and GitOps Promotion Pipelines (Azure DevOps Portal)
+To manage infrastructure changes, build microservices with CI scans, and automate promotions across env directories:
+1. **Create Pipeline 1 (Infrastructure IaC Pipeline):**
+   * In the Azure DevOps menu on the left, navigate to **Pipelines** and click **Create Pipeline**.
+   * **Where is your code?** Select **Azure Repos Git**.
+   * **Select a repository:** Choose `platform-infra`.
+   * **Configure your pipeline:** Select **Existing Azure Pipelines YAML file**.
+   * **Path:** Select the branch `main` and choose `/azure-pipelines-infra.yml`. Click **Continue**.
+   * Click **Variables** in the top right to register environment variables:
+     * Add `ARM_SERVICE_CONNECTION` = `sc-arm-platform-dev-eus`
+     * Add `TF_STATE_RG` = `rg-platform-tfstate-eus`
+     * Add `TF_STATE_SA` = `saplatformtfstate01`
+     * Add `TF_STATE_CONTAINER` = `tfstate`
+   * Click **Save**.
+
+> [!NOTE]
+> Pipeline 1 triggers on changes to the `platform-infra` repository. It runs `terraform plan` on Pull Requests and `terraform apply` on merge to `main`. For UAT/PROD targets, add environment approval gates.
+
+2. **Create Pipeline 2 (Application CI Pipeline):**
    * In the Azure DevOps menu on the left, navigate to **Pipelines** and click **Create Pipeline**.
    * **Where is your code?** Select **Azure Repos Git**.
    * **Select a repository:** Choose your application microservice repository (e.g., `customer-api`).
@@ -567,6 +677,53 @@ When the GitOps Promotion Pipeline (Pipeline 3) creates a Pull Request for UAT o
 
 > [!IMPORTANT]
 > **For PROD promotions:** Ensure that a Change Advisory Board (CAB) review has been completed before merging, as required by the Phase 16 deployment strategy.
+
+### 9. Deploy Kyverno Policy Engine via ArgoCD
+Kyverno provides Kubernetes-native admission control policies complementing Azure Policy (Gatekeeper):
+1. In the ArgoCD dashboard GUI, click **+ New App** (top-left).
+2. Configure the Application:
+   * **Application Name:** `kyverno`
+   * **Project:** `default`
+   * **Sync Policy:** `Automatic`
+   * **Repository URL:** `https://kyverno.github.io/kyverno/`
+   * **Chart:** `kyverno`
+   * **Revision:** *(latest stable)*
+   * **Cluster URL:** `https://kubernetes.default.svc`
+   * **Namespace:** `kyverno`
+3. Click **Create**. ArgoCD will deploy the Kyverno admission controller.
+4. Deploy the three mandatory cluster policies by creating another ArgoCD Application:
+   * **Application Name:** `kyverno-policies`
+   * **Repository URL:** Point to your `platform-gitops` repository.
+   * **Path:** `envs/dev/platform/kyverno-policies/`
+   * **Namespace:** `kyverno`
+   * Click **Create**.
+
+> [!IMPORTANT]
+> Ensure your `platform-gitops` repository contains the following Kyverno ClusterPolicy YAML files in the `kyverno-policies/` directory:
+> - `disallow-latest-tag.yaml` — Blocks `image:latest` tags.
+> - `require-resource-limits.yaml` — Mandates CPU/Memory resource limits on all pods.
+> - `disallow-privileged-containers.yaml` — Blocks containers running as privileged.
+
+### 10. Configure Horizontal Pod Autoscaler (HPA) and Vertical Pod Autoscaler (VPA)
+To enable pod-level autoscaling for cost optimization (Phase 12 of the deployment plan):
+1. **Configure HPA via ArgoCD:**
+   * In the ArgoCD dashboard, click on your application (e.g., **`customer-api`**).
+   * Click **App Details** (top menu) → select the **Parameters** tab.
+   * Locate `autoscaling.enabled` and set its value to `true`.
+   * Set `autoscaling.minReplicas` = `2`, `autoscaling.maxReplicas` = `10`.
+   * Set `autoscaling.targetCPUUtilizationPercentage` = `70`.
+   * Click **Save**. ArgoCD will reconcile and create the HPA resource.
+2. **Deploy VPA (Vertical Pod Autoscaler) via ArgoCD:**
+   * In the ArgoCD dashboard GUI, click **+ New App**.
+   * Configure:
+     * **Application Name:** `vpa`
+     * **Repository URL:** `https://charts.fairwinds.com/stable`
+     * **Chart:** `goldilocks` *(Goldilocks provides VPA recommendations in a dashboard)*
+     * **Namespace:** `monitoring`
+   * Click **Create**. Goldilocks will deploy VPA controllers and generate per-deployment resource recommendations accessible via a web UI.
+3. **Access Goldilocks Dashboard:**
+   * In the ArgoCD dashboard, open the `goldilocks` application, locate the service URL, and navigate to it in your browser.
+   * Review the CPU/Memory recommendations for each workload and adjust Kustomize overlays accordingly.
 
 ---
 
@@ -670,6 +827,35 @@ To deploy the AIOps incident response assistant (reducing MTTR to < 2 minutes) e
      ```
    * Click **Save** and then test the execution using the **Test/Run** panel in the portal GUI.
 
+### 3. Configure Prometheus Alertmanager Webhook Integration
+To route alerts from the Prometheus Alertmanager to the Azure Function App:
+1. Open the **Azure Function App** resource (`func-aiops-connector-dev`).
+2. Select **Functions** in the left sidebar, click on **rca-processor**, and click **Get Function URL**. Copy the URL to your clipboard.
+3. **Option A: Configure via ArgoCD Dashboard**
+   * Access the ArgoCD dashboard GUI on your browser.
+   * Click on the **`kube-prometheus-stack`** application block.
+   * Click **App Details** (top menu) ➔ select the **Parameters** tab.
+   * Scroll down to locate `alertmanager.config.receivers` parameter (or search for `alertmanager`).
+   * Add a webhook configuration pointing to your Azure Function URL:
+     ```yaml
+     receivers:
+     - name: 'aiops-webhook'
+       webhook_configs:
+       - url: 'https://func-aiops-connector-dev.azurewebsites.net/api/rca-processor'
+         send_resolved: true
+     ```
+   * Set `alertmanager.config.route.receiver` to `'aiops-webhook'` to route alerts to it.
+   * Click **Save** to apply the configuration.
+4. **Option B: Configure via Grafana Alerting Contact Points**
+   * Navigate to your Grafana Dashboard URL.
+   * In the left menu, select **Alerting** ➔ **Contact points**.
+   * Click **+ Add contact point**.
+   * Set **Name** to `AIOps-AzureFunction`.
+   * Set **Integration** type to `Webhook`.
+   * **URL:** Paste the copied Azure Function App HTTP trigger URL.
+   * Click **Save contact point**.
+   * Go to **Notification policies** in the Alerting menu, edit the default root policy or create a new policy, and set the contact point to `AIOps-AzureFunction`. Click **Save**.
+
 ---
 
 ## Phase 2, 3, & 4 — Replicating for QA, UAT, & PROD Environments
@@ -713,3 +899,79 @@ Provision resources inside their respective resource groups (`rg-platform-qa-eus
   * **For UAT Cluster:** Set Path to `envs/uat/` (or `apps/uat-apps.yaml`).
   * **For PROD Cluster:** Set Path to `envs/prod/` (or `apps/prod-apps.yaml`).
 * **Pipelines Setup:** Point environment promotion variables in Pipeline 3 (GitOps Promotion Pipeline) to target `envs/qa`, `envs/uat`, and `envs/prod` directories based on approvals (PR validations for UAT and PROD).
+
+---
+
+## Part 5 — Disaster Recovery Testing & Failover Procedure (Azure Portal)
+
+To ensure the platform can survive a complete regional outage of East US (Primary), a secondary infrastructure stack must be prepared in West US (Secondary) and linked via Azure Front Door for global routing.
+
+### 1. Provision Secondary Regional Stack (West US)
+1. **Replicate Hub and Spoke VNet:**
+   * Create `vnet-hub-shared-wus` (Hub) with space `10.10.0.0/16` and the same subnets.
+   * Create `vnet-platform-dev-wus` (Spoke) with space `10.11.0.0/16` and subnets (`snet-aks-system`, `snet-aks-app`, `snet-endpoints`, `snet-ingress`).
+   * Peer them together.
+   * Deploy Azure Firewall (`afw-hub-shared-wus`) in the West US Hub, and associate a Route Table pointing `0.0.0.0/0` to the West US Firewall IP.
+2. **Replicate Key Vault & Backup Storage:**
+   * Key Vault `kv-platform-dev-wus` and Backup Storage account `savelerodevwus` in West US.
+3. **Provision Secondary AKS Cluster:**
+   * Create `aks-dev-wus-cluster` inside `vnet-platform-dev-wus`.
+   * Enable private cluster, overlay CNI, OIDC, Workload Identity, and AGIC integration pointing to a new Application Gateway `appgw-platform-dev-wus`.
+
+### 2. Configure Front Door Multi-Region Routing
+Configure Azure Front Door to route traffic dynamically between regions:
+1. Open the Azure Front Door profile **`fd-platform-ingress-dev`** in the Azure Portal.
+2. Under **Settings** on the left menu, select **Origin groups**, and click on your origin group **`og-dev-appgw`**.
+3. Click **+ Add origin** to add the secondary region endpoint:
+   * **Name:** `origin-appgw-wus`
+   * **Origin type:** `Public IP address`
+   * **Host name:** Select `pip-appgw-platform-dev-wus` (Public IP of the West US Application Gateway).
+   * **Priority:** Set to `2` (East US priority is `1` for Active-Passive failover, or set both to `1` for Active-Active).
+   * **Weight:** `50`
+   * Click **Add**.
+4. Configure **Health Probes**:
+   * **Path:** `/healthz` or `/` (endpoint exposed by the ingress controller).
+   * **Protocol:** `HTTPS` (or HTTP if testing).
+   * **Probe interval:** `30 seconds`.
+5. Click **Update** to save origin group changes. Front Door will now monitor both gateways and route traffic to West US automatically if East US goes offline.
+
+### 3. Execute DR Failover Simulation (Manual Verification)
+To test the failover process and verify secondary regional readiness:
+1. **Verify Geo-Replication Status:**
+   * Open Container Registry (`acrplatformdeveus`) -> select **Replications** -> ensure West US status is **Ready**.
+   * Open Storage Account (`savelerodeveus`) -> select **Redundancy** -> verify secondary region status is healthy.
+2. **Simulate Outage:**
+   * Navigate to the Primary Application Gateway `appgw-platform-dev-eus`.
+   * Under **Settings**, select **Properties**, click **Stop** at the top menu to shut down the primary ingress pathway manually.
+3. **Monitor Ingress Routing Transition:**
+   * Open a command prompt and run `nslookup endpoint-customer-api-dev.azurefd.net` or use your browser to curl the domain.
+   * Access the application and verify it remains accessible.
+   * In Front Door **Overview** or **Metrics**, monitor the backend routing graph to verify traffic shifts completely from `origin-appgw` (East US) to `origin-appgw-wus` (West US).
+4. **Restore Primary Region:**
+   * Navigate back to `appgw-platform-dev-eus` and click **Start** to bring the Primary region back online. Verify traffic fails back to East US.
+
+---
+
+## Part 6 — Production Readiness Checklist
+
+Before moving workloads to production, verify compliance and configuration against the following checklist:
+
+| Category | Item | Verification Steps | Status |
+| :--- | :--- | :--- | :---: |
+| **Security** | Private AKS Cluster | Verify API server public access is disabled, and control plane traffic is restricted. | [ ] |
+| **Security** | Workload Identity | Confirm federated credentials are bound to specific Kubernetes Service Accounts (no hardcoded credentials). | [ ] |
+| **Security** | Key Vault Integration | Validate purge protection is enabled on vaults and secrets are referenced via SecretProviderClass. | [ ] |
+| **Security** | Admission Control | Confirm Kyverno policies (no `latest` tag, limits, non-privileged) are deployed and enforcing. | [ ] |
+| **Security** | Vulnerability Scan | Validate that Trivy scanner scans container images in Pipeline 2 and blocks build on high/critical vulns. | [ ] |
+| **Reliability** | Availability Zones | Verify node pools are distributed across Availability Zones (1, 2, 3) for regional resilience. | [ ] |
+| **Reliability** | Cluster Backups | Verify daily AKS native backup or Velero snapshots are active and storing blobs in geo-redundant storage. | [ ] |
+| **Reliability** | DR Failover Plan | Verify Front Door origin group health probes are active and secondary West US stack is tested. | [ ] |
+| **Observability** | Prometheus / Grafana | Check that standard metrics dashboards (CPU, Memory, Ingress) are loading data in Grafana. | [ ] |
+| **Observability** | Loki Log Stack | Run a query in Grafana Explore on Loki datasource (`{namespace="prod"}`) to verify log aggregation. | [ ] |
+| **Observability** | Jaeger Tracing | Verify microservice traces are visible in the Jaeger UI dashboard. | [ ] |
+| **Observability** | OpenTelemetry | Confirm the OpenTelemetry Collector is running and receiving agent metrics. | [ ] |
+| **FinOps** | OpenCost | Import Grafana Dashboard `16865` and verify cost metrics are populating. | [ ] |
+| **FinOps** | Autoscaling | Verify Cluster Autoscaler is enabled on the `apppool` node pool and HPA is running for microservices. | [ ] |
+| **FinOps** | Spot Instances | Verify `spotpool` is configured with taints and tolerations for low-priority task scaling. | [ ] |
+| **GitOps** | ArgoCD Sync | Validate that ArgoCD synchronizes target state automatically from the `platform-gitops` repository. | [ ] |
+| **AI Operations** | AIOps Connector | Test Prometheus Alertmanager trigger webhook to ensure OpenAI processes RCA alerts to MS Teams. | [ ] |
