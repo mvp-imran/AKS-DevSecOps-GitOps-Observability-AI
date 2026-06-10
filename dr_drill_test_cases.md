@@ -241,6 +241,38 @@ graph TD
 
 ---
 
+### 🧪 DR-TC-07: Observability Data Recovery (Loki Log Replication GRS)
+**Target Component:** Loki Log Aggregator & Replicated Backup Storage GRS (`savelerodeveus` / `savelerodevwus`)  
+**Objective:** Verify that historical container logs stored in the geo-replicated storage account can be queried and read by the Loki instance in the secondary West US region after failover.  
+**Intensity Level:** Level 2 (Parallel Validation)
+
+#### 📝 Pre-requisites
+* Storage account replication is active, and GRS sync state is healthy.
+* Secondary Loki instance is configured to use the GRS storage account secondary endpoint.
+
+#### 🛠️ Execution Steps
+1. Push a unique, traceable log line in the primary region cluster:
+   ```bash
+   kubectl exec -it -n dev $(kubectl get pods -n dev -l app=customer-api -o jsonpath='{.items[0].metadata.name}') -- echo "DR_DRILL_MARKER_LOG_VALIDATION"
+   ```
+2. Wait for GRS replication sync window (~15 minutes under normal Azure sync conditions).
+3. Connect to the secondary West US cluster:
+   ```powershell
+   az aks get-credentials --resource-group rg-platform-dev-wus --name aks-dev-wus-cluster --overwrite-existing
+   ```
+4. Access the secondary Grafana dashboard, open **Explore**, select the secondary region **Loki** data source.
+5. Run the query:
+   ```text
+   {namespace="dev"} |= "DR_DRILL_MARKER_LOG_VALIDATION"
+   ```
+6. Verify if the log line pushed in East US is returned.
+
+#### 🏁 Expected Success Criteria
+* The log line pushed in the primary region is successfully retrieved by the secondary region Loki instance.
+* No data corruption or access restriction occurs during log recovery from the GRS storage replica.
+
+---
+
 ## 📅 DR Drill Implementation & Evaluation Runbook
 
 Follow this operational workflow to schedule, coordinate, and execute a DR drill:
@@ -251,7 +283,23 @@ Follow this operational workflow to schedule, coordinate, and execute a DR drill
 - [ ] Record baseline latency and request error rates of the active application.
 - [ ] Confirm all primary and secondary configuration backups are synced.
 
-### 2. Drill Execution Log Template
+### 2. Velero Backup Schedules Validation
+Verify that daily, weekly, and monthly Velero backup schedules are configured and running successfully:
+- **Daily Backups:** Cron `0 1 * * *` (retained for 7 days).
+- **Weekly Backups:** Cron `0 2 * * 0` (retained for 30 days).
+- **Monthly Backups:** Cron `0 3 1 * *` (retained for 365 days).
+
+Run validation via CLI:
+```bash
+# Get registered schedules
+velero schedule get
+
+# Verify backup execution logs
+velero backup get
+```
+* **Success Criteria:** All backup schedules are `Enabled` and their last runs are in `Completed` status with no errors.
+
+### 3. Drill Execution Log Template
 During the drill, the Drill Coordinator must populate this log:
 
 | Phase | Action | Timestamp | Observed RTO / Duration | Notes |
@@ -264,10 +312,11 @@ During the drill, the Drill Coordinator must populate this log:
 | **5** | Verify operational status on secondary cluster | | | |
 | **6** | Trigger failback recovery to Primary | | | |
 
-### 3. Post-Drill Evaluation (Drill Scorecard)
+### 4. Post-Drill Evaluation (Drill Scorecard)
 Measure the actual outcomes against the targets to calculate compliance scorecards:
 
 $$\text{RTO Compliance Rate} = \left( \frac{\text{Target RTO}}{\text{Actual RTO}} \right) \times 100\%$$
 
 > [!TIP]
 > Periodically run Level 1 simulations every 3 months and Level 3 live failovers every 12 months to verify business continuity readiness and update regional automation scripts.
+
