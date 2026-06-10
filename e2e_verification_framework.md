@@ -11,15 +11,17 @@ This framework defines the verification checklist and outlines two distinct vali
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
 | **TC-01** | Connectivity | Azure Private DNS Resolution | `Resolve-DnsName` | `nslookup` via Jumpbox | Vault/ACR resolve to internal `10.1.20.X` IPs | [ ] |
 | **TC-02** | Security | Egress Firewall Block | Outbound `wget` block test | Curl facebook.com from pod | Outbound connections to non-whitelisted sites time out | [ ] |
-| **TC-03** | Security | Admission Control (Kyverno) | Deploy `:latest` image tag | Create non-compliant YAML | API server rejects manifest with webhook exception | [ ] |
+| **TC-03** | Security | Admission Control (Kyverno) | Deploy `:latest` tag & privileged container | Create non-compliant YAML | API server rejects manifest with webhook exception | [ ] |
 | **TC-04** | Security | Secrets CSI Integration | Exec file check in container | Check pod mounts via CLI | Secret loaded from Key Vault is readable in pod filesystem | [ ] |
 | **TC-05** | GitOps | GitOps Sync Loop | Query ArgoCD Application API | Check Sync state in ArgoCD UI | Drifted configs are auto-synced back to target state | [ ] |
-| **TC-06** | Observability | Prometheus & Grafana | Query Prometheus svc port | Access Grafana portal in GUI | Metrics dashboard displays CPU, Memory, and Pod Count | [ ] |
+| **TC-06** | Observability | Prometheus & Grafana | Query Prometheus/Grafana svc port | Access Grafana portal in GUI | Metrics dashboard displays CPU, Memory, and Pod Count | [ ] |
 | **TC-07** | Observability | Loki Log Collection | Assert Loki svc endpoint | Search logs in Grafana Explore | Queries like `{namespace="dev"}` render logs | [ ] |
 | **TC-08** | Observability | Jaeger Tracing | Assert Jaeger query service | Query traces in Jaeger UI | Tracing spans are mapped for inter-service transactions | [ ] |
 | **TC-09** | FinOps | Load Scaling (HPA/VPA) | Poll HPA resources | Generate CPU stress via pod | HPA scales replicas up under load and scales down | [ ] |
 | **TC-10** | DR | Multi-Region Failover | Check Front Door endpoints | Stop primary App Gateway | Traffic shifts to secondary (West US) origin automatically | [ ] |
-| **TC-11** | AIOps | Azure OpenAI Assistant | Trigger simulated crash | Check teams alerts channel | GPT-4 Root Cause Analysis message delivered in < 2 mins | [ ] |
+| **TC-11** | AIOps | Azure OpenAI Assistant | Verify Function App status | Trigger simulated crash | GPT-4 Root Cause Analysis message delivered in < 2 mins | [ ] |
+| **TC-12** | Mesh | Istio Service Mesh | Verify `aks-istio-system` pods | Validate sidecar injection & mTLS | Control plane runs; non-mesh pods blocked via mTLS | [ ] |
+| **TC-13** | Backup | Velero Backups | Verify Velero backup location | Check backup list and triggers | Backup location returns online; back up/restores succeed | [ ] |
 
 ---
 
@@ -60,8 +62,13 @@ The script will return a real-time compliance scorecard:
 5. Workload Identity & CSI Secret Mounting : [ PASS ]
 6. GitOps Reconciliation & ArgoCD Status : [ PASS ]
 7. Observability Backend Endpoint Health : [ PASS ]
+8. Service Mesh Control Plane Health (Istio) : [ PASS ]
+9. Backup Storage & Backup Configuration (Velero) : [ PASS ]
+10. FinOps Autoscaling Enforcement Check (HPA) : [ PASS ]
+11. Disaster Recovery Routing Availability Check (Front Door) : [ PASS ]
+12. AIOps Connector Function App Status : [ PASS ]
 
-Result: 7 / 7 Tests Passed.
+Result: 12 / 12 Tests Passed.
 =========================================================================
 ```
 
@@ -113,7 +120,32 @@ Follow this runbook to manually verify each component using the Azure Portal, Ar
 3.  **Trace Application Requests (Jaeger):** Open the Jaeger tracing UI, select service `customer-api`, and click **Find Traces**.
     *   **Success Criteria:** Confirm inter-service HTTP spans and database queries are completely mapped and visualized.
 
-### Step 6: Disaster Recovery Failover Simulation (Azure Front Door)
+### Step 6: Service Mesh (Istio) Health
+1.  **Verify Istio Pods:** Check that the service mesh is active in the cluster:
+    ```bash
+    kubectl get pods -n aks-istio-system
+    ```
+    *   **Success Criteria:** Control plane components (`istiod`) are listed as `Running` and healthy.
+2.  **Validate mTLS Enforcement:** From a non-mesh namespace (e.g., `default`), attempt to call `customer-api-service.dev`:
+    ```bash
+    kubectl run non-mesh-client --image=busybox -n default --restart=Never -- wget -qO- --timeout=5 http://customer-api-service.dev.svc.cluster.local/healthz
+    ```
+    *   **Success Criteria:** Connection is blocked or times out, confirming default-deny/mTLS configuration.
+
+### Step 7: Backup and Restore (Velero)
+1.  **Check Backup Storage:** Verify that the backup container is connected and online:
+    ```bash
+    velero backup-location get
+    ```
+    *   **Success Criteria:** Returns status `Available` for the default storage backup location.
+2.  **Trigger Test Backup:** Manually create a backup configuration of the `dev` namespace:
+    ```bash
+    velero backup create test-manual-backup --include-namespaces dev
+    velero backup describe test-manual-backup
+    ```
+    *   **Success Criteria:** Backup status changes from `InProgress` to `Completed` with no errors.
+
+### Step 8: Disaster Recovery Failover Simulation (Azure Front Door)
 1.  **Initiate Primary Region Outage:** In the Azure Portal, open the Primary Application Gateway `appgw-platform-dev-eus` and click **Stop** in the top menu.
 2.  **Verify Automatic Failover:** In your browser, open a new tab and hit your global endpoint:
     `https://endpoint-customer-api-dev.azurefd.net/healthz`

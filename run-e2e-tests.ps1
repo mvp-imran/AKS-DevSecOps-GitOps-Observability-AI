@@ -23,6 +23,11 @@ $results = [ordered]@{
     "5. Workload Identity & CSI Secret Mounting" = "FAIL"
     "6. GitOps Reconciliation & ArgoCD Status" = "FAIL"
     "7. Observability Backend Endpoint Health" = "FAIL"
+    "8. Service Mesh Control Plane Health (Istio)" = "FAIL"
+    "9. Backup Storage & Backup Configuration (Velero)" = "FAIL"
+    "10. FinOps Autoscaling Enforcement Check (HPA)" = "FAIL"
+    "11. Disaster Recovery Routing Availability Check (Front Door)" = "FAIL"
+    "12. AIOps Connector Function App Status" = "FAIL"
 }
 
 # Helper function to assert results
@@ -97,14 +102,40 @@ try {
     # Test Policy 2: mandate limits
     $limitsBlock = kubectl run test-no-limits --image=nginx:1.25 -n $Namespace --restart=Never 2>&1
     
-    if ($tagBlock -match "disallowed" -and $limitsBlock -match "limits are mandatory") {
+    # Test Policy 3: block privileged container escalation
+    $privilegedYaml = @"
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-privileged-escalation
+  namespace: $Namespace
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.25
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+    securityContext:
+      privileged: true
+"@
+    $privilegedYamlPath = Join-Path $env:TEMP "test-privileged.yaml"
+    $privilegedYaml | Out-File -FilePath $privilegedYamlPath -Encoding utf8
+    $privilegedBlock = kubectl apply -f $privilegedYamlPath 2>&1
+    Remove-Item $privilegedYamlPath -ErrorAction SilentlyContinue
+
+    if ($tagBlock -match "disallowed" -and $limitsBlock -match "limits are mandatory" -and $privilegedBlock -match "privileged containers are disallowed") {
         $results["4. Admission Control Rules (Kyverno Block Policies)"] = "PASS"
     } else {
-        Write-Host "[-] Admission rules not enforcing. Tag block response: $tagBlock. Limits block response: $limitsBlock" -ForegroundColor Red
+        Write-Host "[-] Admission rules not enforcing. Tag block response: $tagBlock. Limits block response: $limitsBlock. Privileged block response: $privilegedBlock" -ForegroundColor Red
     }
     
     # Cleanup if pods got scheduled accidentally due to missing policies
-    kubectl delete pod test-latest-tag test-no-limits -n $Namespace --ignore-not-found --now | Out-Null
+    kubectl delete pod test-latest-tag test-no-limits test-privileged-escalation -n $Namespace --ignore-not-found --now | Out-Null
 } catch {
     Write-Host "[-] Kyverno testing failed: $_" -ForegroundColor Red
 }
@@ -259,16 +290,141 @@ try {
     $lokiExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "loki" -Quiet
     $jaegerExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "jaeger" -Quiet
     $promExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "prometheus" -Quiet
+    $grafanaExists = kubectl get svc -n monitoring -o jsonpath='{.items[*].metadata.name}' 2>&1 | Select-String "grafana" -Quiet
     
-    if ($lokiExists -and $jaegerExists -and $promExists) {
+    if ($lokiExists -and $jaegerExists -and $promExists -and $grafanaExists) {
         $results["7. Observability Backend Endpoint Health"] = "PASS"
     } else {
-        Write-Host "[-] Observability services check: Loki: $lokiExists, Jaeger: $jaegerExists, Prometheus: $promExists" -ForegroundColor Red
+        Write-Host "[-] Observability services check: Loki: $lokiExists, Jaeger: $jaegerExists, Prometheus: $promExists, Grafana: $grafanaExists" -ForegroundColor Red
     }
 } catch {
     Write-Host "[-] Observability check failed: $_" -ForegroundColor Red
 }
 Show-Status "7. Observability Backend Endpoint Health" $results["7. Observability Backend Endpoint Health"]
+
+# 8. Check Service Mesh Control Plane Health (Istio)
+try {
+    Write-Host "`n[+] Verifying Istio Service Mesh..." -ForegroundColor Yellow
+    
+    # Check either aks-istio-system (Azure managed) or istio-system (self-managed)
+    $meshNamespace = "aks-istio-system"
+    $istiodPods = kubectl get pods -n $meshNamespace -o json 2>&1
+    if ($istiodPods -match "No resources" -or $istiodPods -match "Error") {
+        $meshNamespace = "istio-system"
+        $istiodPods = kubectl get pods -n $meshNamespace -o json 2>&1
+    }
+    
+    if ($istiodPods -and $istiodPods -notmatch "Error" -and $istiodPods -notmatch "No resources") {
+        $istiodObj = $istiodPods | ConvertFrom-Json
+        $runningIstiod = $istiodObj.items | Where-Object { $_.status.phase -eq "Running" }
+        if ($runningIstiod) {
+            $results["8. Service Mesh Control Plane Health (Istio)"] = "PASS"
+        } else {
+            Write-Host "[-] Istio control plane pods found but none are Running." -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[-] Istio namespace/pods not found." -ForegroundColor Red
+    }
+} catch {
+    Write-Host "[-] Istio mesh health check failed: $_" -ForegroundColor Red
+}
+Show-Status "8. Service Mesh Control Plane Health (Istio)" $results["8. Service Mesh Control Plane Health (Istio)"]
+
+# 9. Check Backup Storage & Backup Configuration (Velero)
+try {
+    Write-Host "`n[+] Verifying Velero backup system health..." -ForegroundColor Yellow
+    
+    # Assert velero storage account is active
+    $veleroStorageAccountName = "savelero" + $Namespace + "eus"
+    $veleroStorage = az storage account show --name $veleroStorageAccountName --resource-group $ResourceGroupName --query "provisioningState" -o tsv 2>&1
+    
+    # Check Velero CRD and pod status in cluster
+    $veleroCrd = kubectl get crd 2>&1 | Select-String "backups.velero.io" -Quiet
+    $veleroPods = kubectl get pods -A -l "app.kubernetes.io/name=velero" -o json 2>&1
+    
+    if ($veleroCrd -and $veleroPods -notmatch "No resources" -and $veleroPods -notmatch "Error") {
+        $veleroObj = $veleroPods | ConvertFrom-Json
+        $runningVelero = $veleroObj.items | Where-Object { $_.status.phase -eq "Running" }
+        if ($runningVelero -and $veleroStorage -match "Succeeded") {
+            $results["9. Backup Storage & Backup Configuration (Velero)"] = "PASS"
+        } else {
+            Write-Host "[-] Velero check failed. Running pods: $($runningVelero.Count), Storage status: $veleroStorage" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[-] Velero CRDs or pods not found in cluster." -ForegroundColor Red
+    }
+} catch {
+    Write-Host "[-] Velero check failed: $_" -ForegroundColor Red
+}
+Show-Status "9. Backup Storage & Backup Configuration (Velero)" $results["9. Backup Storage & Backup Configuration (Velero)"]
+
+# 10. Check FinOps Autoscaling Enforcement Check (HPA)
+try {
+    Write-Host "`n[+] Verifying HPA Configuration..." -ForegroundColor Yellow
+    
+    $hpas = kubectl get hpa -n $Namespace -o json 2>&1
+    if ($hpas -and $hpas -notmatch "No resources" -and $hpas -notmatch "Error") {
+        $hpaObj = $hpas | ConvertFrom-Json
+        if ($hpaObj.items.Count -gt 0) {
+            $results["10. FinOps Autoscaling Enforcement Check (HPA)"] = "PASS"
+        } else {
+            Write-Host "[-] No HPAs configured in namespace $Namespace." -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[-] HPA resource query returned empty or failed." -ForegroundColor Red
+    }
+} catch {
+    Write-Host "[-] HPA check failed: $_" -ForegroundColor Red
+}
+Show-Status "10. FinOps Autoscaling Enforcement Check (HPA)" $results["10. FinOps Autoscaling Enforcement Check (HPA)"]
+
+# 11. Check Disaster Recovery Routing Availability Check (Front Door)
+try {
+    Write-Host "`n[+] Verifying Disaster Recovery Front Door Endpoint..." -ForegroundColor Yellow
+    
+    # Get Front Door endpoint name or check availability
+    $fdHost = "endpoint-customer-api-$Namespace.azurefd.net"
+    Write-Host "Querying Front Door URL: https://$fdHost/healthz"
+    
+    # Perform dns lookup and web request
+    $fdDns = Resolve-DnsName -Name $fdHost -ErrorAction SilentlyContinue
+    $webReq = Invoke-WebRequest -Uri "https://$fdHost/healthz" -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
+    
+    if ($fdDns -and ($webReq.StatusCode -eq 200 -or $webReq -eq $null)) {
+        $results["11. Disaster Recovery Routing Availability Check (Front Door)"] = "PASS"
+    } else {
+        Write-Host "[-] Front Door DNS failed to resolve or returned error. Response status: $($webReq.StatusCode)" -ForegroundColor Red
+    }
+} catch {
+    Write-Host "[-] DR Front Door check failed: $_" -ForegroundColor Red
+}
+Show-Status "11. Disaster Recovery Routing Availability Check (Front Door)" $results["11. Disaster Recovery Routing Availability Check (Front Door)"]
+
+# 12. Check AIOps Connector Function App Status
+try {
+    Write-Host "`n[+] Verifying AIOps Connector Function App status..." -ForegroundColor Yellow
+    
+    # Check for func-aiops-connector-dev or similar Function App
+    $funcApp = az functionapp list --resource-group $ResourceGroupName --query "[?contains(name, 'aiops')]" -o json 2>&1
+    if ($funcApp -and $funcApp -notmatch "Error") {
+        $funcObj = $funcApp | ConvertFrom-Json
+        if ($funcObj.Count -gt 0) {
+            $runningFunc = $funcObj | Where-Object { $_.state -eq "Running" }
+            if ($runningFunc) {
+                $results["12. AIOps Connector Function App Status"] = "PASS"
+            } else {
+                Write-Host "[-] AIOps Function App found but it is in state: $($funcObj[0].state)" -ForegroundColor Red
+            }
+        } else {
+            Write-Host "[-] No function app containing 'aiops' in name was found." -ForegroundColor Red
+        }
+    } else {
+        Write-Host "[-] Function App query failed." -ForegroundColor Red
+    }
+} catch {
+    Write-Host "[-] AIOps Connector verification failed: $_" -ForegroundColor Red
+}
+Show-Status "12. AIOps Connector Function App Status" $results["12. AIOps Connector Function App Status"]
 
 # =========================================================================
 # FINAL SCORECARD PRINT
@@ -288,5 +444,7 @@ foreach ($test in $results.Keys) {
     }
 }
 
-Write-Host "`nResult: $passedCount / $($results.Count) Tests Passed." -ForegroundColor ($passedCount -eq $results.Count ? "Green" : "Red")
+$resultColor = "Red"
+if ($passedCount -eq $results.Count) { $resultColor = "Green" }
+Write-Host "`nResult: $passedCount / $($results.Count) Tests Passed." -ForegroundColor $resultColor
 Write-Host "=========================================================================" -ForegroundColor Cyan

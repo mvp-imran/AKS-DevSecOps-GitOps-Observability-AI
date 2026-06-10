@@ -213,16 +213,30 @@ Verify that Horizontal Pod Autoscalers (HPA) and node pools auto-scale on resour
 ## 6. Observability Stack Integration Validation
 Verify metric collection, log aggregation, and tracing backends.
 
-### Test 6.1: Loki Log Collection
-1. Access the Grafana Dashboard, and navigate to **Explore**.
+### Test 6.1: Grafana Portal & Prometheus Cost Dashboards
+1. Retrieve the Grafana admin password and port-forward to local machine:
+   ```bash
+   kubectl get secret --namespace monitoring kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" | base64 --decode
+   kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
+   ```
+2. Navigate to `http://localhost:3000` in your web browser and log in as `admin`.
+3. Open the **OpenCost Dashboard (Dashboard ID: 16865)**.
+   * **Expected Outcome:** Resource utilization and cost-allocation graphs load successfully, displaying calculated expenditures per namespace and node.
+
+### Test 6.2: Loki Log Collection
+1. Inside the Grafana Dashboard, navigate to the **Explore** tab in the left sidebar.
 2. Select the **Loki** data source.
 3. Enter the query `{namespace="dev"}` and click **Run query**.
 4. **Expected Outcome:** Application logs from `customer-api` pods are fully visible and updated in real-time.
 
-### Test 6.2: Jaeger Distributed Tracing
-1. Open the Jaeger dashboard in your browser.
-2. Select service `customer-api` and click **Find Traces**.
-3. **Expected Outcome:** API request spans, database operations, and inter-service HTTP request call stacks are fully traced and visualized.
+### Test 6.3: Jaeger Distributed Tracing
+1. Port-forward the Jaeger query service port:
+   ```bash
+   kubectl port-forward svc/jaeger-query -n monitoring 16686:16686
+   ```
+2. Navigate to `http://localhost:16686` in your web browser.
+3. Select service `customer-api` in the search pane and click **Find Traces**.
+4. **Expected Outcome:** API request spans, database operations, and inter-service HTTP request call stacks are fully traced and visualized.
 
 ---
 
@@ -258,3 +272,85 @@ Validate that cluster failures trigger GPT-4 troubleshooting diagnostics.
      * Alert name: `OOMKilled`
      * Pod name: `oom-crash-test`
      * **Azure OpenAI RCA Assistant:** A complete diagnosis explaining that the container requested 250M of memory but was terminated by the Linux Out-of-Memory killer due to a 50Mi limit restriction, followed by remediation actions (e.g. increase limits).
+
+---
+
+## 8. Service Mesh (Istio) Validation
+Verify that Istio is active, routing ingress traffic, and enforcing secure mTLS communication.
+
+### Test 8.1: Control Plane Health & Sidecar Injection
+1. Verify the service mesh control plane pod status in the `aks-istio-system` (or `istio-system` if manually deployed) namespace:
+   ```bash
+   kubectl get pods -n aks-istio-system
+   ```
+   * **Expected Outcome:** The control plane manager `istiod-...` is in `Running` and healthy state.
+2. Verify that application workloads are being injected with proxy sidecars:
+   ```bash
+   kubectl get pod -l app=customer-api -n dev -o jsonpath='{.items[*].spec.containers[*].name}'
+   ```
+   * **Expected Outcome:** Returns both `customer-api` and the `istio-proxy` sidecar container.
+
+### Test 8.2: mTLS Enforcement Check
+Check that default-deny peer authentication is active and mTLS is being enforced between namespaces:
+1. Deploy a test pod without an Istio sidecar into a non-mesh namespace:
+   ```bash
+   kubectl run non-mesh-client --image=busybox -n default --restart=Never -- sleep 3600
+   ```
+2. Attempt to connect to a service inside the mesh `dev` namespace:
+   ```bash
+   kubectl exec non-mesh-client -n default -- wget -qO- --timeout=5 http://customer-api-service.dev.svc.cluster.local/healthz
+   ```
+   * **Expected Outcome:** The request is blocked/timed out because mTLS is enforced and the source pod does not have a sidecar proxy to authenticate.
+
+---
+
+## 9. Backup & Recovery (Velero) Validation
+Verify that cluster backup schedules are active and backups are successfully stored in Geo-Redundant Storage (GRS).
+
+### Test 9.1: Velero Backup Schedule and Status
+1. Check the status of Velero deployment and verify that the backup storage location is online:
+   ```bash
+   velero backup-location get
+   ```
+   * **Expected Outcome:** Shows `default` backup storage location is `Available`.
+2. Check that active backup schedules are registered:
+   ```bash
+   velero schedule get
+   ```
+   * **Expected Outcome:** Returns the configured schedules (e.g., `daily-backup`).
+3. Manually trigger a backup to verify blob writing to storage account:
+   ```bash
+   velero backup create test-manual-backup --include-namespaces dev
+   velero backup describe test-manual-backup
+   ```
+   * **Expected Outcome:** Backup transitions from `InProgress` to `Completed` with 0 errors.
+
+---
+
+## 10. Disaster Recovery Failover Simulation
+Verify that Azure Front Door routes global user traffic around regional outages automatically.
+
+### Test 10.1: Regional Outage Simulation & Traffic Redirection
+1. In the Azure Portal, open the Primary Application Gateway `appgw-platform-dev-eus` and click **Stop** in the top menu.
+2. In a PowerShell terminal on your workstation, continuously query your global Front Door endpoint:
+   ```powershell
+   while ($true) {
+       try {
+           $res = Invoke-RestMethod -Uri "https://endpoint-customer-api-dev.azurefd.net/healthz" -TimeoutSec 3
+           Write-Host "$(Get-Date -Format 'HH:mm:ss') - Response: $($res.status)" -ForegroundColor Green
+       } catch {
+           Write-Host "$(Get-Date -Format 'HH:mm:ss') - Failed: $_" -ForegroundColor Red
+       }
+       Start-Sleep -Seconds 2
+   }
+   ```
+3. **Expected Outcome:** 
+   * Within seconds of stopping the primary gateway, traffic shifts from the East US origin to the West US origin.
+   * The global endpoint remains responsive, returning HTTP `200` (healthy statuses) with minimal packet drop (< 3 failed requests during switch).
+
+### Test 10.2: Failback to Primary Region
+1. Restart the Primary Application Gateway `appgw-platform-dev-eus` via the Azure Portal.
+2. Wait for the App Gateway backend health probes to pass (~3-5 minutes).
+3. Observe the Azure Front Door routing metrics dashboard.
+   * **Expected Outcome:** Traffic splits back to the primary East US region, restoring the active-active/active-passive regional preference config.
+
