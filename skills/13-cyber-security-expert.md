@@ -23,12 +23,15 @@ Network Isolation:
 - Private Link / Private Endpoints
 - Network Security Groups (NSGs)
 - Egress Firewall Filtering
+- Kubernetes Network Policies (microsegmentation)
 
 Host & Container:
 
 - Container Vulnerability Scans (Trivy)
 - Static Application Security Testing (SonarQube)
 - Ephemeral Read-Only Pod Filesystems
+- Policy-as-Code enforcement (Kyverno / OPA Gatekeeper)
+- Software Supply Chain Security (image signing with Cosign, SBOM validation)
 
 ## Cryptography
 

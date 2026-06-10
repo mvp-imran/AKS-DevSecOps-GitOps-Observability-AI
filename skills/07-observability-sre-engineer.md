@@ -47,3 +47,8 @@ Teams
 Email
 
 Webhook
+
+## Security Recommendations (Suggested)
+
+- Enforce TLS encryption and Entra ID OAuth2 authentication for Grafana, Prometheus, and Loki access.
+- Restrict access to monitoring endpoints and dashboard services via private networking or mTLS.

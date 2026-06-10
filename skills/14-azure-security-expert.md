@@ -12,6 +12,8 @@ Azure Workload Identity (OIDC Federation)
 
 Managed Identities for resources
 
+Microsoft Entra Privileged Identity Management (PIM) for JIT admin access
+
 ## Infrastructure Protection
 
 Use:
@@ -23,6 +25,8 @@ Azure Bastion (Secure VM access)
 Azure Firewall Premium (IDPS & TLS Inspection)
 
 Subnet Network Security Groups (NSGs)
+
+Azure Policy (Governance & guardrails)
 
 ## Data & Vault Protection
 

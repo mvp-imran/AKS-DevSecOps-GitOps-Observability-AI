@@ -45,3 +45,8 @@ Policy Reports
 Compliance Dashboards
 
 Audit Evidence
+
+## Security Recommendations (Suggested)
+
+- Configure continuous security compliance scans and audit trails using Azure Defender for Cloud and Microsoft Sentinel alerts.
+- Restrict public access policies across Azure resources by default using Azure Policy.

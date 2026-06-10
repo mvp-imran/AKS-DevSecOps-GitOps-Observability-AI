@@ -47,3 +47,9 @@ Create reusable modules:
 - keyvault
 - monitoring
 - backup
+
+## Security Recommendations (Suggested)
+
+- Enforce private endpoint configurations and disable public network access for Azure Storage state backend.
+- Mandate Azure Key Vault soft-delete, purge protection, and CMK (Customer-Managed Keys) disk encryption configurations via Terraform.
+- Restrict network access using NSG and firewall resource definitions (Defense in Depth).

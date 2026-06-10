@@ -31,3 +31,8 @@ gitops
 - Projects
 - RBAC
 - Helm integration
+
+## Security Recommendations (Suggested)
+
+- Restrict ArgoCD Projects and Application access using Kubernetes namespace-scoped RBAC (Least Privilege).
+- Ensure TLS 1.3 / mTLS encryption is enforced for all ingress traffic to ArgoCD.

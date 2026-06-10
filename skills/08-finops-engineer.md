@@ -37,3 +37,7 @@ BusinessUnit
 ## Reports
 
 Generate monthly optimization reports.
+
+## Security Recommendations (Suggested)
+
+- Restrict Cost Management tools (e.g., OpenCost) to read-only RBAC roles and secure their APIs/interfaces behind TLS.

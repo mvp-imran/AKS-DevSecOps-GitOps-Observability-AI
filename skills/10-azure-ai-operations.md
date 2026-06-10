@@ -33,3 +33,8 @@ AI Ops Architecture
 Prompt Templates
 
 Automation Workflows
+
+## Security Recommendations (Suggested)
+
+- Secure Azure OpenAI API access using Private Endpoints and enforce Microsoft Entra ID authentication.
+- Restrict log ingestion to prevent leakage of PII or credentials into AI modeling prompts.

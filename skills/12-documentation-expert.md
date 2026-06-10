@@ -37,3 +37,7 @@ Observability
 DR
 
 Use Mermaid diagrams.
+
+## Security Recommendations (Suggested)
+
+- Enforce a strict policy against documenting plain text secrets, passwords, or connection strings in any guide or code repository.

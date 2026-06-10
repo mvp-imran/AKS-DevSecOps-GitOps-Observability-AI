@@ -49,3 +49,8 @@ JWT
 OAuth2
 
 Entra ID Integration
+
+## Security Recommendations (Suggested)
+
+- Mandate read-only root filesystems and run containers as non-root users in Pod Security Contexts.
+- Enforce Istio mTLS for all inter-service communications and authenticate APIs with JWT/OAuth2.

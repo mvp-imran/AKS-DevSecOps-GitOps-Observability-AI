@@ -37,3 +37,8 @@ DR Runbooks
 Recovery Procedures
 
 Failover Documentation
+
+## Security Recommendations (Suggested)
+
+- Enforce encryption at rest using Customer-Managed Keys (CMK) and Storage GRS for Velero backup storage accounts.
+- Restrict backup/restore cluster roles to designated administrator service accounts only (Least Privilege).

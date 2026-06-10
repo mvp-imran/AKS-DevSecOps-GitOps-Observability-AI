@@ -54,3 +54,9 @@ Always generate:
 - DR architecture
 - Cost optimization plans
 - Complete source code
+
+## Security Recommendations (Suggested)
+
+- Design with Zero Trust Architecture (verify explicitly, least privilege, assume breach) across all design domains.
+- Mandate private networking (Private Link/Private Endpoints) and disable public IP endpoints for all key services (AKS, KV, ACR).
+- Integrate Azure Sentinel SIEM and centralized Azure Defender for Containers logging into the master platform architecture.

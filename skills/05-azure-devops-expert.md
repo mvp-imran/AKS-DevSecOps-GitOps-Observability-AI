@@ -33,3 +33,8 @@ Require:
 - PR Approval
 - Security Checks
 - Build Validation
+
+## Security Recommendations (Suggested)
+
+- Enforce Azure Workload Identity (OIDC Federation) for pipeline service connections, avoiding long-lived client secrets.
+- Mandate automated static analysis (SonarQube) and container vulnerability scans (Trivy) as release gate blockers.

@@ -52,3 +52,7 @@ Always generate:
 - Backup configuration
 - DR configuration
 - Documentation
+
+## Security Recommendations (Suggested)
+
+- Align all platform designs and operational guidelines with Cyber Security (Zero Trust, Defense in Depth) and Azure Security (Private AKS, Bastion, Defender, Sentinel) standards.
