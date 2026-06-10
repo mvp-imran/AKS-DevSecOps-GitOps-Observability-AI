@@ -59,7 +59,64 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
      * Traffic forwarded from remote virtual network: *Allow (default)*
 4. Click **Add**. Both peerings will transition to `Connected` status.
 
-### 4. Create and Configure Spoke Route Table (UDR)
+### 4. Provision Azure Firewall (Hub Egress Gateway)
+1. Search for **Firewalls** in the portal search bar and click **+ Create**.
+2. In the **Basics** tab, configure:
+   * **Resource Group:** `rg-platform-dev-eus`
+   * **Name:** `afw-hub-shared-eus`
+   * **Region:** `East US`
+   * **Firewall tier:** **Standard**
+   * **Firewall policy:** Click **Add new**, name it `pol-afw-shared`, select Region `East US`, and click **OK**.
+   * **Virtual network:** Select **Use existing**, choose `vnet-hub-shared-eus`.
+   * **Public IP address:** Click **Add new**, name it `pip-afw-hub`, and click **OK**.
+3. Click **Review + create**, and then **Create**.
+4. Once deployed, search for **Firewall Policies**, click on `pol-afw-shared`, and configure egress rules:
+   * Select **Network rules** in the left menu, and click **+ Add a rule collection**.
+   * **Name:** `allow-egress-rc`
+   * **Rule collection type:** `Network`
+   * **Priority:** `1000`
+   * **Rule collection action:** `Allow`
+   * **Rules:**
+     * **Name:** `allow-all-vnet-outbound`
+     * **Source type:** `IP Address`
+     * **Source:** `10.0.0.0/8`
+     * **Protocol:** `Any`
+     * **Destination Ports:** `*`
+     * **Destination Type:** `IP Address`
+     * **Destination:** `*`
+   * Click **Add**.
+5. Go back to the **afw-hub-shared-eus** Firewall page, click **Properties** in the left menu, and note the **Private IP** (it should be `10.0.0.4` — this is used as the next hop for Spoke egress).
+
+### 5. Provision Azure Bastion & Jumpbox VM (Secure Access)
+1. **Deploy Azure Bastion Host:**
+   * Search for **Bastions** in the portal search bar and click **+ Create**.
+   * **Resource Group:** `rg-platform-dev-eus`
+   * **Name:** `bas-hub-shared-eus`
+   * **Region:** `East US`
+   * **Virtual Network:** `vnet-hub-shared-eus` *(Subnet will automatically bind to `AzureBastionSubnet`)*.
+   * **Public IP address:** Click **Create new**, name it `pip-bastion-hub`, and click **OK**.
+   * Click **Review + create**, and then **Create**.
+2. **Deploy Jumpbox VM (Secure workstation for private cluster management):**
+   * Search for **Virtual machines** in the portal search bar and click **+ Create** ➔ **Azure virtual machine**.
+   * **Resource Group:** `rg-platform-dev-eus`
+   * **Name:** `vm-jumpbox-dev`
+   * **Region:** `East US`
+   * **Availability options:** *No infrastructure redundancy required*
+   * **Image:** Select **Windows 11 Pro** or **Ubuntu Server 22.04 LTS**
+   * **Size:** Select `Standard_D2s_v5`
+   * **Administrator account:** Select password auth and set credentials (e.g., `azureuser` / secure password)
+   * **Inbound port rules:** Select *None*
+   * Click the **Networking** tab:
+     * **Virtual network:** `vnet-hub-shared-eus`
+     * **Subnet:** `snet-shared-services`
+     * **Public IP:** Select **None** *(Crucial: Access is mediated entirely by Bastion)*
+     * **NIC network security group:** *Basic*
+   * Click **Review + create**, and then **Create**.
+3. **Connect to Jumpbox:**
+   * Once the VM is deployed, open the VM resource page, click **Connect** ➔ select **Bastion**.
+   * Enter the credentials set during creation and click **Connect** to load the desktop/terminal session securely in your web browser.
+
+### 6. Create and Configure Spoke Route Table (UDR)
 1. Search for **Route tables** in the portal search bar and click **+ Create**.
 2. Configure the basics:
    * **Resource Group:** `rg-platform-dev-eus`
@@ -79,7 +136,7 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
      * **Subnet:** Select `snet-aks-system`. Click **OK**.
      * Click **+ Associate** again, select `vnet-platform-dev-eus`, and select `snet-aks-app`. Click **OK**.
 
-### 5. Create and Configure Network Security Groups (NSGs)
+### 7. Create and Configure Network Security Groups (NSGs)
 1. Search for **Network security groups** in the portal search bar and click **+ Create**.
 2. Configure the basics:
    * **Resource Group:** `rg-platform-dev-eus`
@@ -123,14 +180,23 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
    * **Resource Group:** Select `rg-platform-dev-eus`.
    * **Registry name:** Enter a globally unique name, e.g., `acrplatformdeveus`.
    * **Location:** `East US`.
-   * **SKU:** Select **Premium** *(Premium is mandatory for geo-replication and private link connectivity)*.
+   * **SKU:** Select **Premium** *(Mandatory for geo-replication and private link)*.
 3. In the **Replications** tab:
    * Select your target secondary region, e.g., **West US**, to configure replication.
 4. In the **Networking** tab:
-   * Select **Private access** to configure Private Endpoints later.
+   * Select **Private access**.
 5. Click **Review + create**, and then **Create**.
+6. Once deployed, configure the **Private Endpoint**:
+   * Open the Container Registry resource page.
+   * Under **Settings** in the left menu, select **Networking**.
+   * Click the **Private endpoint connections** tab, then click **+ Private endpoint**.
+   * **Basics tab:** Resource Group: `rg-platform-dev-eus`, Name: `pe-acr-platform-dev-eus`, Region: `East US`.
+   * **Resource tab:** Target sub-resource: `registry`.
+   * **Virtual Network tab:** Virtual network: `vnet-platform-dev-eus`, Subnet: `snet-endpoints`.
+   * **Private DNS integration:** Select **Yes** *(Integrates with `privatelink.azurecr.io`)*.
+   * Click **Review + create**, and then **Create**.
 
-### 2. Provision Azure Key Vault
+### 2. Provision Azure Key Vault & Create Secrets
 1. Search for **Key vaults** and click **+ Create**.
 2. In the **Basics** tab:
    * **Resource Group:** Select `rg-platform-dev-eus`.
@@ -150,6 +216,18 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
      * Subnet: `snet-endpoints`
      * Private DNS integration: Select **Yes** *(Integrate with private DNS zone `privatelink.vaultcore.azure.net`)*.
 5. Click **Review + create**, and then **Create**.
+6. Once deployed, manually add required application secret variables:
+   * Open your **kv-platform-dev-eus** resource page.
+   * Scroll down the left menu to **Objects** and select **Secrets**.
+   * Click **+ Generate/Import**.
+   * Configure:
+     * **Upload options:** `Manual`
+     * **Name:** `prod-db-password`
+     * **Secret value:** Enter a secure password string.
+     * Click **Create**.
+   * Click **+ Generate/Import** again to add other integration credentials if required:
+     * **Name:** `sonar-token` *(Value: Your SonarQube quality gate token)*.
+     * **Name:** `openai-key` *(Value: Your Azure OpenAI Service Auth Key)*.
 
 ### 3. Provision Backup Storage Account
 1. Search for **Storage accounts** and click **+ Create**.
@@ -160,9 +238,57 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
    * **Performance:** *Standard*.
    * **Redundancy:** Select **Geo-redundant storage (GRS)**.
 3. Click **Review + create**, and then **Create**.
-4. Once deployed, open the Storage Account, select **Containers** under *Data storage*, click **+ Container**, and name it `velero` with Private access.
+4. Once deployed, open the Storage Account:
+   * Select **Containers** under *Data storage*, click **+ Container**, and name it `velero` with Private access.
+   * Configure **Network Security & Private Endpoint**:
+     * Select **Networking** under *Security + networking* in the left menu.
+     * Click **Firewalls and virtual networks** and change Public network access to **Disabled** or **Enabled from selected virtual networks and IP addresses**.
+     * Click the **Private endpoint connections** tab, then click **+ Private endpoint**.
+     * **Basics tab:** Resource Group: `rg-platform-dev-eus`, Name: `pe-sa-velero-dev-eus`, Region: `East US`.
+     * **Resource tab:** Target sub-resource: `blob`.
+     * **Virtual Network tab:** Virtual network: `vnet-platform-dev-eus`, Subnet: `snet-endpoints`.
+     * **Private DNS integration:** Select **Yes** *(Integrates with `privatelink.blob.core.windows.net`)*.
+     * Click **Review + create**, and then **Create**.
 
-### 4. Create and Configure Azure Front Door with WAF (Global Ingress Gateway)
+### 4. Provision Azure Application Gateway (Regional Ingress)
+1. Search for **Application gateways** in the portal search bar and click **+ Create**.
+2. In the **Basics** tab, configure:
+   * **Resource Group:** `rg-platform-dev-eus`
+   * **Application gateway name:** `appgw-platform-dev-eus`
+   * **Region:** `East US`
+   * **Tier:** **WAF V2**
+   * **Autoscaling:** Select **Yes** (Min capacity: 1, Max capacity: 10)
+   * **Virtual network:** Select `vnet-platform-dev-eus`.
+   * **Subnet:** Select `snet-ingress` (`10.1.21.0/24`).
+3. In the **Frontends** tab:
+   * **Frontend IP address type:** `Public`
+   * **Public IP address:** Click **Add new**, name it `pip-appgw-platform-dev-eus`, and click **OK**.
+4. In the **Backends** tab:
+   * Click **Add a backend pool**.
+   * **Name:** `bp-aks-istio-ingress`
+   * **Add backend pool without targets:** Select **Yes** *(Targets will be automatically assigned by the AKS Ingress Controller integration)*.
+   * Click **Add**.
+5. In the **Configuration** tab, click **+ Add a routing rule**:
+   * **Rule name:** `rule-http-ingress`
+   * **Priority:** `100`
+   * **Listener tab:**
+     * **Listener name:** `listener-http`
+     * **Frontend IP:** `Public`
+     * **Protocol:** `HTTP` *(HTTP is used for routing to the service mesh gateway which terminates mTLS)*.
+     * **Port:** `80`
+     * **Listener type:** `Basic`
+   * **Backend targets tab:**
+     * **Target type:** `Backend pool`
+     * **Backend target:** Select `bp-aks-istio-ingress`.
+     * **Backend settings:** Click **Add new**:
+       * **Backend settings name:** `setting-http-8080`
+       * **Backend protocol:** `HTTP`
+       * **Backend port:** `8080` *(Target Istio ingress gateway port)*
+       * Click **Add**.
+   * Click **Add**.
+6. Click **Review + create**, and then **Create**.
+
+### 5. Create and Configure Azure Front Door with WAF (Global Ingress Gateway)
 1. Search for **Front Door and CDN profiles** in the Azure Portal search bar and click **+ Create**.
 2. Compare offerings, select **Azure Front Door**, and select **Custom create**. Click **Continue to create Front Door**.
 3. In the **Basics** tab:
@@ -173,7 +299,14 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
 5. In the **Route** tab, click **+ Add route**:
    * **Route name:** `route-to-dev-appgw`.
    * **Domains:** Select your endpoint `endpoint-customer-api-dev.azurefd.net`.
-   * **Origin group:** Click *Create new*. Name: `og-dev-appgw`. Click *Add origin*. Name: `origin-appgw`, Origin type: *Public IP address*, Select the public IP associated with your spoke Application Gateway. Click *Add* and then *Create*.
+   * **Origin group:** Click *Create new*:
+     * **Name:** `og-dev-appgw`
+     * Click **+ Add origin**:
+       * **Name:** `origin-appgw`
+       * **Origin type:** `Public IP address`
+       * **Host name:** Select `pip-appgw-platform-dev-eus` *(The public IP created for your spoke Application Gateway)*.
+       * Click **Add**.
+     * Click **Create**.
    * **Forwarding protocol:** HTTPS only.
    * Click **Add**.
 6. In the **Security** tab:
@@ -219,12 +352,13 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
 
 ### 3. Configure Networking & Security
 1. Click the **Networking** tab:
-   * Network configuration: **Azure CNI (Overlay)**.
-   * Network policy: **Azure NPM** (or Calico).
-   * Virtual network: Select `vnet-platform-dev-eus`.
-   * Kubernetes service address range: `10.2.0.0/16`.
-   * Kubernetes DNS service IP address: `10.2.0.10`.
-   * Private cluster: Check **Enable private cluster** *(Enforces api-server endpoint isolation)*.
+   * **Network configuration:** Select **Azure CNI (Overlay)**.
+   * **Network policy:** Select **Azure NPM** (or Calico).
+   * **Virtual network:** Select `vnet-platform-dev-eus`.
+   * **Kubernetes service address range:** `10.2.0.0/16`.
+   * **Kubernetes DNS service IP address:** `10.2.0.10`.
+   * **Private cluster:** Check **Enable private cluster** *(Enforces api-server endpoint isolation)*.
+   * **API server authorized IP ranges:** *(Optional but recommended for direct workstation management)* Check **Enable API server authorized IP ranges** and click **+ Add IP range** to add your workstation public IP address (e.g., `203.0.113.50/32`) to allow direct connections, or add Azure DevOps hosted agents IP blocks.
 2. Click the **Security** tab:
    * Check **Enable OIDC issuer**.
    * Check **Enable Workload Identity**.
@@ -232,6 +366,9 @@ This guide provides a detailed, step-by-step walkthrough to deploy and configure
 ### 4. Setup Integrations
 1. Click the **Integrations** tab:
    * **Container registry:** Select `acrplatformdeveus` in the dropdown. This automatically configures the `AcrPull` role assignment for the cluster.
+   * **Application Gateway Ingress Controller (AGIC):**
+     * Check **Enable ingress controller**.
+     * **Application Gateway:** Select **Use existing** and choose `appgw-platform-dev-eus` from the dropdown list. *(This automatically configures the AGIC routing loop)*.
 2. Click **Review + create**, and then **Create**.
 
 ### 5. Configure Workload Identity Federated Credentials
@@ -333,6 +470,51 @@ To verify that Kyverno policies (Phase 8 of the deployment plan) are operating c
 3. You will see a compliance dashboard displaying compliance state for your pods.
 4. Click on the policy names (such as **Kubernetes cluster pods should only use allowed volume types** or **Kubernetes cluster containers should run with CPU/Memory limits**) to view the list of non-compliant pods or blocked events.
 
+### 6. Configure Service Connections (Azure DevOps Portal)
+To allow Azure DevOps pipelines to securely authenticate to Azure resources and push quality metrics, establish these connections:
+1. **Azure Resource Manager (ARM) Service Connection:**
+   * In your Azure DevOps Project, click on **Project settings** (gear icon) in the bottom-left corner of the sidebar.
+   * Select **Service connections** under *Pipelines* in the menu.
+   * Click **+ New service connection** ➔ select **Azure Resource Manager** ➔ click **Next**.
+   * Select **Workload Identity federation (automatic)** ➔ click **Next**.
+   * Configure details:
+     * **Scope level:** `Subscription`
+     * **Subscription:** Select your target subscription from the dropdown.
+     * **Resource group:** Select `rg-platform-dev-eus`.
+     * **Service connection name:** `sc-arm-platform-dev-eus`.
+     * Check the box: **Grant access permission to all pipelines**.
+   * Click **Save** to automatically register the federated credentials.
+2. **SonarQube / SonarCloud Service Connection:**
+   * Click **+ New service connection** again.
+   * Select **SonarQube** (or **SonarCloud**) from the connection list ➔ click **Next**.
+   * Configure parameters:
+     * **Server URL:** Input your SonarQube instance address (e.g. `https://sonarqube.yourdomain.com`).
+     * **Token:** Paste your SonarQube quality gate user token.
+     * **Service connection name:** `sc-sonarqube`.
+     * Check **Grant access permission to all pipelines**.
+   * Click **Save**.
+
+### 7. Create Build and GitOps Promotion Pipelines (Azure DevOps Portal)
+To build microservices with CI scans and automate promotions across env directories:
+1. **Create Pipeline 2 (Application CI Pipeline):**
+   * In the Azure DevOps menu on the left, navigate to **Pipelines** and click **Create Pipeline**.
+   * **Where is your code?** Select **Azure Repos Git**.
+   * **Select a repository:** Choose your application microservice repository (e.g., `customer-api`).
+   * **Configure your pipeline:** Select **Existing Azure Pipelines YAML file**.
+   * **Path:** Select the branch `main` and choose your build configuration path (e.g., `/azure-pipelines-ci.yml` or `/azure-pipelines.yml`). Click **Continue**.
+   * Click **Variables** in the top right to register environment variables:
+     * Add `SONAR_CONNECTION` = `sc-sonarqube`
+     * Add `ACR_NAME` = `acrplatformdeveus`
+   * Click **Save** (do not run, or run to test).
+2. **Create Pipeline 3 (GitOps Promotion Pipeline):**
+   * Go back to **Pipelines** ➔ click **New pipeline**.
+   * Select **Azure Repos Git** ➔ Select repository `platform-gitops`.
+   * Select **Existing Azure Pipelines YAML file** ➔ Path: Choose `/azure-pipelines-promote.yml` ➔ Click **Continue**.
+   * Configure Variables:
+     * Add `ARM_SERVICE_CONNECTION` = `sc-arm-platform-dev-eus`
+     * Add `GITOPS_REPO` = `platform-gitops`
+   * Click **Save**.
+
 ---
 
 ## Part 4.5 — Observability & Azure OpenAI Integration Setup (Azure Portal)
@@ -391,8 +573,8 @@ To deploy the AIOps incident response assistant (reducing MTTR to < 2 minutes) e
 
 To deploy the subsequent QA, UAT, and PROD environments manually via the Azure Portal, repeat the configurations detailed in **Part 1**, **Part 2**, and **Part 3** with the following parameter modifications:
 
-### 1. Networking Configurations (Part 1 Repeats)
-Create VNets, Subnets, and Peerings for each environment:
+### 1. Networking & Security Configurations (Part 1 Repeats)
+Create VNets, Subnets, Peerings, Route Tables (UDR), and NSGs for each environment:
 * **QA Virtual Network:**
   * Name: `vnet-platform-qa-eus`
   * Address Space: `10.2.0.0/16`
@@ -405,19 +587,26 @@ Create VNets, Subnets, and Peerings for each environment:
   * Name: `vnet-platform-prod-eus`
   * Address Space: `10.4.0.0/16`
   * Subnets: `snet-aks-system` (`10.4.0.0/22`), `snet-aks-app` (`10.4.4.0/20`), `snet-endpoints` (`10.4.20.0/24`), `snet-ingress` (`10.4.21.0/24`).
-* **Peering & UDR Rules:** Set up peerings between each new spoke VNet and `vnet-hub-shared-eus`. Associate a custom Route Table pointing `0.0.0.0/0` to the Firewall IP `10.0.0.4`.
+* **Peering & UDR Rules:** Set up peerings between each new spoke VNet and `vnet-hub-shared-eus`. Associate a custom Route Table (`rt-spoke-egress-qa`, `rt-spoke-egress-uat`, `rt-spoke-egress-prod`) pointing `0.0.0.0/0` to the Firewall IP `10.0.0.4`.
+* **NSG Rules:** Create Network Security Groups (`nsg-aks-app-qa`, `nsg-aks-app-uat`, `nsg-aks-app-prod`) for the `snet-aks-app` subnet of each spoke, allowing inbound HTTP/HTTPS from the respective local `snet-ingress` subnet and denying all other direct inbound traffic.
 
 ### 2. Service & Cluster Provisioning (Part 2 & 3 Repeats)
 Provision resources inside their respective resource groups (`rg-platform-qa-eus`, `rg-platform-uat-eus`, `rg-platform-prod-eus`):
-* **Azure Key Vault:** Create vaults named `kv-platform-qa-eus`, `kv-platform-uat-eus`, and `kv-platform-prod-eus` with public access disabled and Private Endpoints mapped to local `snet-endpoints`.
-* **Backup Storage:** Create accounts named `saveleroqaeus`, `savelerouateus`, and `saveleroprodeus` with GRS replication.
+* **Azure Key Vault:** Create vaults named `kv-platform-qa-eus`, `kv-platform-uat-eus`, and `kv-platform-prod-eus` with public access disabled and Private Endpoints mapped to local `snet-endpoints`. Import quality-gate and application secrets (e.g., `prod-db-password` in the PROD key vault).
+* **Backup Storage:** Create accounts named `saveleroqaeus`, `savelerouateus`, and `saveleroprodeus` with GRS replication, container `velero`, and Private Endpoints configured to block public access.
+* **Application Gateways:** Create regional application gateways named `appgw-platform-qa-eus`, `appgw-platform-uat-eus`, and `appgw-platform-prod-eus` in each spoke `snet-ingress` subnet, configuring backend pools for Istio ingress targets.
+* **Azure Front Door Routes:** Add endpoints and routes mapping your UAT and PROD application domain names to the public IPs of `appgw-platform-uat-eus` and `appgw-platform-prod-eus`.
 * **AKS Clusters:**
   * Create clusters named `aks-qa-cluster`, `aks-uat-cluster`, and `aks-prod-cluster`.
   * Ensure each is private, overlay CNI, and has `systempool`, `apppool`, and `spotpool` pools defined.
   * Enable OIDC and Workload Identity.
+  * Enable the **Application Gateway Ingress Controller (AGIC)** checkbox under *Integrations*, linking each cluster to its respective environment Application Gateway (e.g., `appgw-platform-qa-eus` for the QA cluster).
+  * Configure **API server authorized IP ranges** to allow secure access for your deployment workstations or pipeline pools.
 
-### 3. GitOps Configuration (Part 4 Repeats)
-For each new cluster, configure GitOps under the AKS **GitOps** blade:
-* **For QA Cluster:** Set Path to `envs/qa/` (or `apps/qa-apps.yaml`).
-* **For UAT Cluster:** Set Path to `envs/uat/` (or `apps/uat-apps.yaml`).
-* **For PROD Cluster:** Set Path to `envs/prod/` (or `apps/prod-apps.yaml`).
+### 3. Azure DevOps & GitOps Configuration (Part 4 Repeats)
+* **Service Connections:** Create separate ARM Service Connections (`sc-arm-platform-qa-eus`, `sc-arm-platform-uat-eus`, `sc-arm-platform-prod-eus`) in the Azure DevOps Portal to target each environment's resource group.
+* **GitOps operator Configurations:** For each new cluster, configure GitOps under the AKS **GitOps** blade:
+  * **For QA Cluster:** Set Path to `envs/qa/` (or `apps/qa-apps.yaml`).
+  * **For UAT Cluster:** Set Path to `envs/uat/` (or `apps/uat-apps.yaml`).
+  * **For PROD Cluster:** Set Path to `envs/prod/` (or `apps/prod-apps.yaml`).
+* **Pipelines Setup:** Point environment promotion variables in Pipeline 3 (GitOps Promotion Pipeline) to target `envs/qa`, `envs/uat`, and `envs/prod` directories based on approvals (PR validations for UAT and PROD).
