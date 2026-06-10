@@ -250,6 +250,67 @@ Instead of installing ArgoCD via terminal Helm commands, you can deploy and conf
 
 Azure will now automatically deploy the GitOps controller onto the private cluster and sync the App-of-Apps manifests without running a single line of command-line code.
 
+### 3. Exposing Grafana & Observability Dashboards via ArgoCD UI
+Once the GitOps sync starts, ArgoCD automatically deploys the Prometheus-Operator (`kube-prometheus-stack`) and Loki. To access the Grafana GUI dashboards without kubectl command-lines:
+1. Access the ArgoCD dashboard GUI on your browser.
+2. Click on the **`kube-prometheus-stack`** application block.
+3. Click **App Details** (top menu) -> select **Parameters** tab.
+4. Scroll to locate `grafana.ingress.enabled` and set its value to `true`.
+5. Locate `grafana.ingress.hosts` and input your registered domain mapping, e.g., `grafana.dev.customer-api.mvfimran.com`.
+6. Click **Save** (ArgoCD will automatically reconcile and deploy the ingress route, allowing you to access Grafana directly at that DNS address).
+
+---
+
+## Part 4.5 — Observability & Azure OpenAI Integration Setup (Azure Portal)
+
+To deploy the AIOps incident response assistant (reducing MTTR to < 2 minutes) entirely via GUI:
+
+### 1. Provision the Azure OpenAI Service
+1. In the Azure Portal search bar, search for **Azure OpenAI** and click **+ Create**.
+2. Configure the basics:
+   * **Resource Group:** Select `rg-platform-dev-eus`.
+   * **Name:** `aoai-platform-dev-eus`.
+   * **Pricing Tier:** `S0` (Standard).
+3. Click **Review + create**, and then **Create**.
+4. Once deployed, open the OpenAI resource and click **Go to Azure AI Studio** (or Azure OpenAI Studio).
+5. In Azure AI Studio:
+   * Select **Deployments** under Shared Resources in the left menu.
+   * Click **+ Create new deployment**.
+   * **Select a model:** Choose `gpt-35-turbo` or `gpt-4`.
+   * **Model version:** Select default (latest).
+   * **Deployment name:** Enter `gpt-rca-model`.
+   * Click **Create**.
+
+### 2. Deploy the AIOps Connector (Azure Function App)
+1. Search for **Function App** in the Azure Portal search bar and click **+ Create**.
+2. Configure the basics:
+   * **Resource Group:** Select `rg-platform-dev-eus`.
+   * **Function App name:** Enter a unique name, e.g., `func-aiops-connector-dev`.
+   * **Runtime stack:** Select `Python` (or Node.js).
+   * **Version:** Select latest stable.
+   * **Region:** `East US`.
+   * **Plan type:** *Consumption (Serverless)*.
+3. Click **Review + create**, and then **Create**.
+4. Once deployed, configure Secure Managed Identity Access:
+   * Open the Function App -> select **Identity** under *Settings* in the left menu.
+   * Under the **System assigned** tab, set Status to **On**. Click **Save** (confirm with Yes).
+   * Note down the auto-generated **Object ID** of the Function's Identity.
+5. Grant the Function App permission to query the OpenAI model:
+   * Navigate back to your **aoai-platform-dev-eus** (Azure OpenAI) resource.
+   * Select **Access control (IAM)** in the left menu.
+   * Click **+ Add** ➔ **Add role assignment**.
+   * **Role:** Select **Cognitive Services User**.
+   * **Assign access to:** Select *Managed identity*, then click *+ Select members*.
+   * Select your Function App `func-aiops-connector-dev`.
+   * Click **Review + assign**.
+6. Register the Environment Variables:
+   * Open the Function App -> select **Configuration** under *Settings* in the left menu.
+   * Click **+ New application setting** to add these keys:
+     * `AZURE_OPENAI_ENDPOINT` = *The Endpoint URL copied from your Azure OpenAI Keys page.*
+     * `AZURE_OPENAI_DEPLOYMENT` = `gpt-rca-model`
+     * `TEAMS_WEBHOOK_URL` = *Your Microsoft Teams / Slack Channel Incoming Webhook URL.*
+   * Click **Save** and then **Confirm**.
+
 ---
 
 ## Phase 2, 3, & 4 — Replicating for QA, UAT, & PROD Environments
