@@ -66,7 +66,7 @@ module "aks" {
 
 # 6. Role Assignment: Grant AKS permission to pull images from ACR
 resource "azurerm_role_assignment" "aks_acr_pull" {
-  principal_id                     = module.aks.kubelet_identity_client_id
+  principal_id                     = module.aks.kubelet_identity_object_id
   role_definition_name             = "AcrPull"
   scope                            = module.acr.id
   skip_service_principal_aad_check = true

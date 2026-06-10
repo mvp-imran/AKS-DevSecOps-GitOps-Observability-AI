@@ -36,6 +36,15 @@ Open VS Code (`code .` in your workspace folder) and install the following exten
 
 ## Part 2 — Unified Deployment Variables (Active Session Setup)
 
+> [!IMPORTANT]
+> **Repository Directory Structure:** This guide assumes that the `platform-infra` (this repository) and `platform-gitops` repositories are cloned side-by-side in the same parent directory (e.g. `C:\RnD\platform-infra` and `C:\RnD\platform-gitops`).
+>
+> To clone them side-by-side, navigate to your parent directory (`C:\RnD`) and run:
+> ```powershell
+> git clone https://dev.azure.com/mvfimran/_git/platform-gitops
+> git clone https://dev.azure.com/mvfimran/_git/customer-api
+> ```
+
 Copy the block below, customize the inputs with your details, and **run it once** in your active PowerShell window. All subsequent deployment steps rely on these variables.
 
 ```powershell
@@ -99,6 +108,9 @@ terraform apply `
   -var="resource_group_name=rg-platform-dev-eus" `
   -var="environment=dev" `
   -auto-approve
+
+# Return to workspace parent directory
+cd ../../../..
 ```
 
 ### Step 3: Connect & Setup DEV Cluster
@@ -128,7 +140,7 @@ kubectl apply -f platform-gitops/apps/dev-apps.yaml -n gitops
 ### Step 1: Provision QA Infrastructure
 ```powershell
 # Move to QA environment folder
-cd ../qa
+cd platform-infra/terraform/environments/qa
 
 # Initialize backend dynamically
 terraform init `
@@ -149,6 +161,9 @@ terraform apply `
   -var="resource_group_name=rg-platform-qa-eus" `
   -var="environment=qa" `
   -auto-approve
+
+# Return to workspace parent directory
+cd ../../../..
 ```
 
 ### Step 2: Connect & Setup QA Cluster
@@ -158,6 +173,8 @@ az aks get-credentials --resource-group rg-platform-qa-eus --name aks-qa-cluster
 
 # Install ArgoCD GitOps Operator
 kubectl create namespace gitops
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
 helm install argocd argo/argo-cd --namespace gitops
 
 # Inject Azure DevOps access token
@@ -176,7 +193,7 @@ kubectl apply -f platform-gitops/apps/qa-apps.yaml -n gitops
 ### Step 1: Provision UAT Infrastructure
 ```powershell
 # Move to UAT environment folder
-cd ../uat
+cd platform-infra/terraform/environments/uat
 
 # Initialize backend dynamically
 terraform init `
@@ -190,13 +207,16 @@ terraform apply `
   -var="tenant_id=$TENANT_ID" `
   -var="acr_name=acr${CLIENT_PREFIX}uateus" `
   -var="keyvault_name=kv-${CLIENT_PREFIX}-uat-eus" `
-  -var="velero_storage_account_name=savelerouateus" `
+  -var="velero_storage_account_name=savelero${CLIENT_PREFIX}uateus" `
   -var="cluster_name=aks-uat-cluster" `
   -var="dns_prefix=aksuat" `
   -var="location=$LOCATION_PRIMARY" `
   -var="resource_group_name=rg-platform-uat-eus" `
   -var="environment=uat" `
   -auto-approve
+
+# Return to workspace parent directory
+cd ../../../..
 ```
 
 ### Step 2: Connect & Setup UAT Cluster
@@ -206,6 +226,8 @@ az aks get-credentials --resource-group rg-platform-uat-eus --name aks-uat-clust
 
 # Install ArgoCD GitOps Operator
 kubectl create namespace gitops
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
 helm install argocd argo/argo-cd --namespace gitops
 
 # Inject Azure DevOps access token
@@ -224,7 +246,7 @@ kubectl apply -f platform-gitops/apps/uat-apps.yaml -n gitops
 ### Step 1: Provision PROD Infrastructure
 ```powershell
 # Move to PROD environment folder
-cd ../prod
+cd platform-infra/terraform/environments/prod
 
 # Initialize backend dynamically
 terraform init `
@@ -238,13 +260,16 @@ terraform apply `
   -var="tenant_id=$TENANT_ID" `
   -var="acr_name=acr${CLIENT_PREFIX}prodeus" `
   -var="keyvault_name=kv-${CLIENT_PREFIX}-prod-eus" `
-  -var="velero_storage_account_name=saveleroprodeus" `
+  -var="velero_storage_account_name=savelero${CLIENT_PREFIX}prodeus" `
   -var="cluster_name=aks-prod-cluster" `
   -var="dns_prefix=aksprod" `
   -var="location=$LOCATION_PRIMARY" `
   -var="resource_group_name=rg-platform-prod-eus" `
   -var="environment=prod" `
   -auto-approve
+
+# Return to workspace parent directory
+cd ../../../..
 ```
 
 ### Step 2: Connect & Setup PROD Cluster
@@ -254,6 +279,8 @@ az aks get-credentials --resource-group rg-platform-prod-eus --name aks-prod-clu
 
 # Install ArgoCD GitOps Operator
 kubectl create namespace gitops
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
 helm install argocd argo/argo-cd --namespace gitops
 
 # Inject Azure DevOps access token
