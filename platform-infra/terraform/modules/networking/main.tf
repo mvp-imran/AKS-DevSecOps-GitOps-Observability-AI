@@ -180,3 +180,95 @@ resource "azurerm_subnet_network_security_group_association" "app_nsg" {
   subnet_id                 = azurerm_subnet.aks_app.id
   network_security_group_id = azurerm_network_security_group.aks_app.id
 }
+
+# NSG for system node pool subnet (only allow management from Hub)
+resource "azurerm_network_security_group" "aks_system" {
+  name                = "nsg-aks-system-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  security_rule {
+    name                       = "allow-hub-management"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["443", "10250"]
+    source_address_prefix      = "10.0.0.0/16" # Hub VNet IP range
+    destination_address_prefix = azurerm_subnet.aks_system.address_prefixes[0]
+  }
+
+  security_rule {
+    name                       = "deny-all-other-inbound"
+    priority                   = 200
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = {
+    Environment = var.environment
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "system_nsg" {
+  subnet_id                 = azurerm_subnet.aks_system.id
+  network_security_group_id = azurerm_network_security_group.aks_system.id
+}
+
+# NSG for Ingress Subnet
+resource "azurerm_network_security_group" "spoke_ingress" {
+  name                = "nsg-ingress-${var.environment}"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+
+  security_rule {
+    name                       = "allow-http-https-inbound"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["80", "443"]
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "allow-gateway-manager-probes"
+    priority                   = 110
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "65200-65535"
+    source_address_prefix      = "GatewayManager"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "deny-all-other-inbound"
+    priority                   = 200
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+
+  tags = {
+    Environment = var.environment
+  }
+}
+
+resource "azurerm_subnet_network_security_group_association" "ingress_nsg" {
+  subnet_id                 = azurerm_subnet.spoke_ingress.id
+  network_security_group_id = azurerm_network_security_group.spoke_ingress.id
+}

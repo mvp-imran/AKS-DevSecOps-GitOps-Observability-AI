@@ -23,3 +23,18 @@ variable "replica_location" {
   type        = string
   default     = "westus"
 }
+
+variable "subnet_endpoint_id" {
+  description = "Subnet ID for ACR Private Endpoint"
+  type        = string
+}
+
+variable "vnet_id" {
+  description = "ID of the Spoke VNet for Private DNS Zone link"
+  type        = string
+}
+
+variable "log_analytics_workspace_id" {
+  description = "The Resource ID of the Log Analytics Workspace for diagnostics"
+  type        = string
+}

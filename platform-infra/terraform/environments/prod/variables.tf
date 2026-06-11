@@ -47,3 +47,9 @@ variable "environment" {
   type        = string
   default     = "prod"
 }
+
+variable "log_analytics_workspace_name" {
+  description = "Name of the Log Analytics Workspace"
+  type        = string
+  default     = "law-platform-prod-eus"
+}

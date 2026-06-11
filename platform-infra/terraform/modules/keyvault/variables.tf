@@ -32,3 +32,8 @@ variable "vnet_id" {
   description = "ID of the Spoke VNet for Private DNS Zone binding"
   type        = string
 }
+
+variable "log_analytics_workspace_id" {
+  description = "The Resource ID of the Log Analytics Workspace for diagnostics"
+  type        = string
+}

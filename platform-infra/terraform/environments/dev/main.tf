@@ -22,26 +22,39 @@ module "networking" {
   spoke_address_space = ["10.1.0.0/16"]
 }
 
-# 2. Azure Container Registry Module
-module "acr" {
-  source              = "../../modules/acr"
+# 1.5 Monitoring Module (Centralized Logging)
+module "monitoring" {
+  source              = "../../modules/monitoring"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
-  acr_name            = var.acr_name
   environment         = var.environment
-  replica_location    = "westus" # Secondary DR Region
+  workspace_name      = var.log_analytics_workspace_name
+}
+
+# 2. Azure Container Registry Module
+module "acr" {
+  source                     = "../../modules/acr"
+  resource_group_name        = azurerm_resource_group.rg.name
+  location                   = azurerm_resource_group.rg.location
+  acr_name                   = var.acr_name
+  environment                = var.environment
+  replica_location           = "westus" # Secondary DR Region
+  subnet_endpoint_id         = module.networking.subnet_spoke_endpoints_id
+  vnet_id                    = module.networking.spoke_vnet_id
+  log_analytics_workspace_id = module.monitoring.id
 }
 
 # 3. Key Vault Module
 module "keyvault" {
-  source              = "../../modules/keyvault"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  keyvault_name       = var.keyvault_name
-  tenant_id           = var.tenant_id
-  environment         = var.environment
-  subnet_endpoint_id  = module.networking.subnet_spoke_endpoints_id
-  vnet_id             = module.networking.spoke_vnet_id
+  source                     = "../../modules/keyvault"
+  resource_group_name        = azurerm_resource_group.rg.name
+  location                   = azurerm_resource_group.rg.location
+  keyvault_name              = var.keyvault_name
+  tenant_id                  = var.tenant_id
+  environment                = var.environment
+  subnet_endpoint_id         = module.networking.subnet_spoke_endpoints_id
+  vnet_id                    = module.networking.spoke_vnet_id
+  log_analytics_workspace_id = module.monitoring.id
 }
 
 # 4. Storage for Backups (Velero) Module
@@ -55,14 +68,17 @@ module "backup" {
 
 # 5. Private AKS Cluster Module
 module "aks" {
-  source              = "../../modules/aks"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  cluster_name        = var.cluster_name
-  dns_prefix          = var.dns_prefix
-  subnet_system_id    = module.networking.subnet_aks_system_id
-  subnet_app_id       = module.networking.subnet_aks_app_id
-  environment         = var.environment
+  source                     = "../../modules/aks"
+  resource_group_name        = azurerm_resource_group.rg.name
+  location                   = azurerm_resource_group.rg.location
+  cluster_name               = var.cluster_name
+  dns_prefix                 = var.dns_prefix
+  subnet_system_id           = module.networking.subnet_aks_system_id
+  subnet_app_id              = module.networking.subnet_aks_app_id
+  environment                = var.environment
+  tenant_id                  = var.tenant_id
+  log_analytics_workspace_id = module.monitoring.id
+  local_accounts_enabled     = true
 }
 
 # 6. Role Assignment: Grant AKS permission to pull images from ACR

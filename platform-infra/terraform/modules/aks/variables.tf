@@ -32,3 +32,25 @@ variable "environment" {
   description = "Deployment environment"
   type        = string
 }
+
+variable "tenant_id" {
+  description = "The Microsoft Entra ID tenant ID for integration"
+  type        = string
+}
+
+variable "admin_group_object_ids" {
+  description = "List of Microsoft Entra ID group object IDs to be cluster admins"
+  type        = list(string)
+  default     = []
+}
+
+variable "local_accounts_enabled" {
+  description = "Enable or disable local accounts for AKS cluster"
+  type        = bool
+  default     = true
+}
+
+variable "log_analytics_workspace_id" {
+  description = "The Resource ID of the Log Analytics Workspace for security and diagnostics"
+  type        = string
+}

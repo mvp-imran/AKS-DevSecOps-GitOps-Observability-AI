@@ -7,6 +7,7 @@ resource "azurerm_key_vault" "kv" {
   enabled_for_disk_encryption = true
   tenant_id                   = var.tenant_id
   sku_name                    = "standard"
+  purge_protection_enabled    = true
 
   # Disable public network access for security by default
   public_network_access_enabled = false
@@ -60,4 +61,19 @@ resource "azurerm_private_dns_a_record" "kv_dns_a" {
   resource_group_name = var.resource_group_name
   ttl                 = 300
   records             = [azurerm_private_endpoint.kv_pe.private_service_connection[0].private_ip_address]
+}
+
+resource "azurerm_monitor_diagnostic_setting" "kv_diag" {
+  name                       = "diag-${var.keyvault_name}"
+  target_resource_id         = azurerm_key_vault.kv.id
+  log_analytics_workspace_id = var.log_analytics_workspace_id
+
+  enabled_log {
+    category = "AuditEvent"
+  }
+
+  metric {
+    category = "AllMetrics"
+    enabled  = true
+  }
 }
